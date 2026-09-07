@@ -9,7 +9,6 @@ app.use(express.json());
 
 const anthropic = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
 
-// In-memory lead store. Resets whenever the service restarts.
 const leads = [];
 const MAX_LEADS = 500;
 let nextId = 1;
@@ -162,4 +161,79 @@ Respond with ONLY raw JSON, no markdown fences:
 
 app.post('/api/process-email', async (req, res) => {
   try {
-    const { from, customerName, body, faqContext = DEFAULT_FAQ } =
+    const { from, customerName, body, faqContext = DEFAULT_FAQ } = req.body;
+
+    if (!body) return res.status(400).json({ error: 'Missing body in request' });
+
+    const initial = await analyzeEmailWithClaude(body, faqContext, null);
+
+    let shopifyData = null;
+    if (initial.extractedOrderNumber) {
+      shopifyData = await getShopifyOrder(initial.extractedOrderNumber);
+    }
+
+    const final = shopifyData
+      ? await analyzeEmailWithClaude(body, faqContext, shopifyData)
+      : initial;
+
+    const lead = {
+      _id: String(nextId++),
+      email: from,
+      customerName,
+      question: body,
+      orderNumber: final.extractedOrderNumber,
+      productType: final.type,
+      shopifyOrderData: shopifyData,
+      aiAnalysis: final.summary,
+      aiResponse: final.response,
+      status: 'replied',
+      createdAt: new Date().toISOString(),
+    };
+
+    leads.unshift(lead);
+    if (leads.length > MAX_LEADS) leads.pop();
+
+    res.json({ success: true, lead, response: final.response });
+  } catch (error) {
+    console.error('Error processing email:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/leads', (req, res) => res.json(leads));
+
+app.get('/api/leads/:id', (req, res) => {
+  const lead = leads.find((l) => l._id === req.params.id);
+  if (!lead) return res.status(404).json({ error: 'Not found' });
+  res.json(lead);
+});
+
+app.get('/api/shopify-check', async (req, res) => {
+  try {
+    const token = await getShopifyToken();
+    const r = await fetch(`https://${SHOPIFY_STORE}/admin/api/${SHOPIFY_API_VERSION}/shop.json`, {
+      headers: { 'X-Shopify-Access-Token': token },
+    });
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) return res.status(502).json({ ok: false, httpStatus: r.status, body });
+    res.json({ ok: true, store: body.shop && body.shop.myshopify_domain });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    storage: 'in-memory',
+    leadsStored: leads.length,
+    env: {
+      CLAUDE_API_KEY: process.env.CLAUDE_API_KEY ? 'set' : 'MISSING',
+      SHOPIFY_CLIENT_ID: SHOPIFY_CLIENT_ID ? 'set' : 'MISSING',
+      SHOPIFY_CLIENT_SECRET: SHOPIFY_CLIENT_SECRET ? 'set' : 'MISSING',
+    },
+  });
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
