@@ -342,13 +342,31 @@ app.get('/api/leads/:id', (req, res) => {
 });
 
 app.get('/api/product-check', async (req, res) => {
+  const term = req.query.q || 'mirror';
+  const out = { term };
+
   try {
-    const term = req.query.q || 'mirror';
-    const products = await searchProducts(term);
-    res.json({ ok: true, term, count: products.length, products });
+    const token = await getShopifyToken();
+    const scopeRes = await fetch(
+      `https://${SHOPIFY_STORE}/admin/oauth/access_scopes.json`,
+      { headers: { 'X-Shopify-Access-Token': token } }
+    );
+    const scopeBody = await scopeRes.json().catch(() => ({}));
+    out.grantedScopes = (scopeBody.access_scopes || []).map((s) => s.handle);
   } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
+    out.scopeError = err.message;
   }
+
+  try {
+    const data = await shopifyGraphQL(PRODUCT_QUERY, { q: term });
+    const edges = (data.products && data.products.edges) || [];
+    out.count = edges.length;
+    out.products = edges.map((e) => e.node.title);
+  } catch (err) {
+    out.productError = err.message;
+  }
+
+  res.json(out);
 });
 
 app.get('/api/shopify-check', async (req, res) => {
