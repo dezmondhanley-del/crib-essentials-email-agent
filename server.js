@@ -33,7 +33,11 @@ const leadSchema = new mongoose.Schema(
     matchedProducts: [String],
     aiAnalysis: String,
     aiResponse: String,
-    status: { type: String, default: 'replied' },
+    threadId: String,
+    subject: String,
+    status: { type: String, default: 'drafted' },
+    sentAt: Date,
+    sentBody: String,
     createdAt: { type: Date, default: Date.now },
   },
   { versionKey: false }
@@ -42,7 +46,6 @@ const leadSchema = new mongoose.Schema(
 if (MONGODB_URI) {
   Lead = mongoose.model('Lead', leadSchema);
   mongoose
-     mongoose
     .connect(MONGODB_URI, { serverSelectionTimeoutMS: 8000 })
     .then(() => {
       dbReady = true;
@@ -375,7 +378,7 @@ Respond with ONLY raw JSON, no markdown fences:
 
 app.post('/api/process-email', async (req, res) => {
   try {
-    const { from, customerName, body, faqContext } = req.body;
+    const { from, customerName, body, subject, threadId, faqContext } = req.body;
     if (!body) return res.status(400).json({ error: 'Missing body in request' });
 
     const faq = faqContext && String(faqContext).trim() ? faqContext : getFaq();
@@ -407,7 +410,9 @@ app.post('/api/process-email', async (req, res) => {
       matchedProducts: products.map((p) => p.title),
       aiAnalysis: final.summary,
       aiResponse: final.response,
-      status: 'replied',
+      threadId: threadId || null,
+      subject: subject || null,
+      status: 'drafted',
       createdAt: new Date(),
     });
 
@@ -432,6 +437,81 @@ app.get('/api/leads/:id', async (req, res) => {
     if (!lead) return res.status(404).json({ error: 'Not found' });
     res.json(lead);
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+const SEND_WEBHOOK_URL = process.env.SEND_WEBHOOK_URL;
+const DASHBOARD_TOKEN = process.env.DASHBOARD_TOKEN;
+
+// Sending mail is the one action here with real-world consequences, so it is
+// gated on a shared token. Without DASHBOARD_TOKEN set, the route is disabled
+// entirely rather than left open.
+function checkToken(req, res) {
+  if (!DASHBOARD_TOKEN) {
+    res.status(503).json({ error: 'Sending is disabled: DASHBOARD_TOKEN is not set on the server.' });
+    return false;
+  }
+  const supplied = req.get('x-dashboard-token') || '';
+  if (supplied !== DASHBOARD_TOKEN) {
+    res.status(401).json({ error: 'Bad or missing dashboard token.' });
+    return false;
+  }
+  return true;
+}
+
+app.post('/api/leads/:id/send', async (req, res) => {
+  if (!checkToken(req, res)) return;
+
+  try {
+    if (!SEND_WEBHOOK_URL) {
+      return res.status(503).json({ error: 'SEND_WEBHOOK_URL is not set on the server.' });
+    }
+
+    const lead = await findLead(req.params.id);
+    if (!lead) return res.status(404).json({ error: 'Lead not found' });
+
+    const bodyText = String((req.body && req.body.body) || '').trim();
+    if (!bodyText) return res.status(400).json({ error: 'Reply body is empty' });
+    if (!lead.threadId) {
+      return res.status(400).json({ error: 'This lead has no Gmail thread id, so it cannot be replied to in thread.' });
+    }
+
+    const hook = await fetch(SEND_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        threadId: lead.threadId,
+        to: lead.email,
+        subject: lead.subject ? `Re: ${lead.subject}` : undefined,
+        body: bodyText,
+      }),
+    });
+
+    if (!hook.ok) {
+      const t = await hook.text().catch(() => '');
+      return res.status(502).json({ error: `Send webhook returned ${hook.status}: ${t.slice(0, 200)}` });
+    }
+
+    const sentAt = new Date();
+    if (dbReady && Lead) {
+      await Lead.findByIdAndUpdate(req.params.id, {
+        status: 'sent',
+        sentAt: sentAt,
+        sentBody: bodyText,
+      });
+    } else {
+      const m = memoryLeads.find((l) => l._id === req.params.id);
+      if (m) {
+        m.status = 'sent';
+        m.sentAt = sentAt;
+        m.sentBody = bodyText;
+      }
+    }
+
+    res.json({ sent: true, sentAt });
+  } catch (err) {
+    console.error('Send failed:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -489,7 +569,7 @@ app.get('/api/health', async (req, res) => {
   }
   res.json({
     status: 'ok',
-        storage: dbReady ? 'mongodb (persistent)' : 'in-memory (resets on restart)',
+    storage: dbReady ? 'mongodb (persistent)' : 'in-memory (resets on restart)',
     dbError: dbError || null,
     leadsStored: leadCount,
     faqSource: process.env.SUPPORT_FAQ ? 'SUPPORT_FAQ env var' : 'built-in fallback',
@@ -499,6 +579,8 @@ app.get('/api/health', async (req, res) => {
       SHOPIFY_CLIENT_SECRET: SHOPIFY_CLIENT_SECRET ? 'set' : 'MISSING',
       SUPPORT_FAQ: process.env.SUPPORT_FAQ ? 'set' : 'not set (using built-in)',
       MONGODB_URI: MONGODB_URI ? 'set' : 'not set (leads in memory)',
+      SEND_WEBHOOK_URL: process.env.SEND_WEBHOOK_URL ? 'set' : 'MISSING (sending disabled)',
+      DASHBOARD_TOKEN: process.env.DASHBOARD_TOKEN ? 'set' : 'MISSING (sending disabled)',
     },
   });
 });
