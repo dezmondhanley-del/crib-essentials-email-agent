@@ -196,6 +196,58 @@ async function shopifyGraphQL(query, variables) {
   return json.data || {};
 }
 
+const PRODUCTS_BY_ID_QUERY = `
+  query($ids: [ID!]!) {
+    nodes(ids: $ids) {
+      ... on Product {
+        id
+        title
+        description
+        totalInventory
+        priceRangeV2 { minVariantPrice { amount currencyCode } }
+        options { name values }
+      }
+    }
+  }`;
+
+function shapeProduct(node) {
+  if (!node) return null;
+  return {
+    id: node.id,
+    title: node.title,
+    description: String(node.description || '').slice(0, 700),
+    price: node.priceRangeV2 && node.priceRangeV2.minVariantPrice
+      ? node.priceRangeV2.minVariantPrice.amount
+      : null,
+    inventory: node.totalInventory,
+    options: (node.options || [])
+      .map((o) => `${o.name}: ${o.values.join(', ')}`)
+      .join(' | '),
+  };
+}
+
+// Products are fetched by ID, not by name. A product can be renamed after an
+// order is placed - the order still says "iPod Mirror" while the catalog says
+// "Phone Mirror" - and a name search silently misses it.
+async function getProductsByIds(ids) {
+  const unique = [...new Set((ids || []).filter(Boolean))].slice(0, 10);
+  if (!unique.length) return [];
+
+  const cacheKey = 'ids:' + unique.slice().sort().join(',');
+  const hit = productCache.get(cacheKey);
+  if (hit && Date.now() < hit.expires) return hit.value;
+
+  try {
+    const data = await shopifyGraphQL(PRODUCTS_BY_ID_QUERY, { ids: unique });
+    const items = (data.nodes || []).map(shapeProduct).filter(Boolean);
+    productCache.set(cacheKey, { value: items, expires: Date.now() + PRODUCT_CACHE_MS });
+    return items;
+  } catch (err) {
+    console.error('Product fetch by id failed:', err.message);
+    return [];
+  }
+}
+
 const PRODUCT_QUERY = `
   query($q: String!) {
     products(first: 3, query: $q) {
@@ -240,24 +292,32 @@ async function searchProducts(term) {
   }
 }
 
-async function gatherProducts(keywords, lineItemNames) {
-  const terms = [];
-  (keywords || []).forEach((k) => terms.push(k));
-  (lineItemNames || []).forEach((n) => terms.push(String(n).split(' - ')[0]));
+async function gatherProducts(keywords, productIds) {
+  // Everything actually on their orders, fetched by product ID.
+  const fromOrders = await getProductsByIds(productIds);
 
-  const unique = [...new Set(terms.map((t) => String(t).trim()).filter(Boolean))].slice(0, 3);
+  // Anything else they asked about by name that they haven't ordered.
+  const covered = new Set(fromOrders.map((p) => p.title.toLowerCase()));
+  const extraTerms = [...new Set((keywords || []).map((k) => String(k).trim()).filter(Boolean))]
+    .filter((k) => !covered.has(k.toLowerCase()))
+    .slice(0, 3);
 
-  const results = await Promise.all(unique.map((t) => searchProducts(t)));
+  const fromKeywords = extraTerms.length
+    ? (await Promise.all(extraTerms.map((t) => searchProducts(t)))).flat()
+    : [];
 
   const seen = new Set();
   const merged = [];
-  results.flat().forEach((p) => {
-    if (!seen.has(p.title)) {
-      seen.add(p.title);
+  fromOrders.concat(fromKeywords).forEach((p) => {
+    const key = p.title.toLowerCase();
+    // Free-gift duplicates just muddy the answer.
+    if (!seen.has(key) && key.indexOf('free gift') === -1) {
+      seen.add(key);
       merged.push(p);
     }
   });
-  return merged.slice(0, 4);
+
+  return merged.slice(0, 8);
 }
 
 function formatProducts(products) {
@@ -289,7 +349,7 @@ const CUSTOMER_QUERY = `
                 displayFinancialStatus
                 displayFulfillmentStatus
                 totalPriceSet { shopMoney { amount } }
-                lineItems(first: 5) { edges { node { title quantity } } }
+                lineItems(first: 10) { edges { node { title quantity product { id } } } }
                 fulfillments(first: 3) { trackingInfo { number url company } }
               }
             }
@@ -332,6 +392,7 @@ async function getCustomerContext(email) {
           items: (o.lineItems.edges || []).map((le) => ({
             title: le.node.title,
             quantity: le.node.quantity,
+            productId: le.node.product ? le.node.product.id : null,
           })),
           tracking: tracking,
         };
@@ -368,29 +429,66 @@ ${lines.join('\n')}
 `;
 }
 
+const ORDER_QUERY = `
+  query($q: String!) {
+    orders(first: 1, query: $q) {
+      edges {
+        node {
+          name
+          createdAt
+          displayFinancialStatus
+          displayFulfillmentStatus
+          totalPriceSet { shopMoney { amount } }
+          lineItems(first: 20) {
+            edges {
+              node {
+                title
+                quantity
+                product { id title }
+              }
+            }
+          }
+          fulfillments(first: 5) { trackingInfo { number url company } }
+        }
+      }
+    }
+  }`;
+
 async function getShopifyOrder(orderNumber) {
   try {
-    const token = await getShopifyToken();
-    const url = `https://${SHOPIFY_STORE}/admin/api/${SHOPIFY_API_VERSION}/orders.json?name=${encodeURIComponent(orderNumber)}&status=any`;
-    const response = await fetch(url, { headers: { 'X-Shopify-Access-Token': token } });
-    const data = await response.json().catch(() => ({}));
+    const raw = String(orderNumber || '').replace(/^#/, '').trim();
+    if (!raw) return null;
 
-    if (!data.orders || data.orders.length === 0) return null;
-    const order = data.orders[0];
+    const data = await shopifyGraphQL(ORDER_QUERY, { q: `name:#${raw}` });
+    const edge = data.orders && data.orders.edges && data.orders.edges[0];
+    if (!edge) return null;
+    const o = edge.node;
+
+    const tracking = [];
+    (o.fulfillments || []).forEach((f) => {
+      (f.trackingInfo || []).forEach((t) => {
+        tracking.push({
+          trackingNumber: t.number || 'N/A',
+          trackingUrl: t.url || 'N/A',
+          company: t.company || '',
+          status: 'shipped',
+        });
+      });
+    });
 
     return {
-      orderNumber: order.order_number,
-      orderName: order.name,
-      status: order.financial_status,
-      fulfillmentStatus: order.fulfillment_status,
-      createdAt: order.created_at,
-      total: order.total_price,
-      products: (order.line_items || []).map((i) => ({ name: i.name, quantity: i.quantity })),
-      trackingInfo: (order.fulfillments || []).map((f) => ({
-        trackingNumber: f.tracking_number || 'N/A',
-        trackingUrl: f.tracking_url || 'N/A',
-        status: f.status,
+      orderNumber: raw,
+      orderName: o.name,
+      status: o.displayFinancialStatus,
+      fulfillmentStatus: o.displayFulfillmentStatus,
+      createdAt: o.createdAt,
+      total: o.totalPriceSet && o.totalPriceSet.shopMoney ? o.totalPriceSet.shopMoney.amount : null,
+      products: (o.lineItems.edges || []).map((le) => ({
+        name: le.node.title,
+        quantity: le.node.quantity,
+        productId: le.node.product ? le.node.product.id : null,
       })),
+      trackingInfo: tracking,
     };
   } catch (error) {
     console.error('Shopify order lookup failed:', error.message);
@@ -414,7 +512,8 @@ Order: ${shopifyData.orderName || shopifyData.orderNumber}
 Placed: ${shopifyData.createdAt}${age !== null ? ` (${age} days ago)` : ''}
 Payment status: ${shopifyData.status}
 Fulfillment status: ${shopifyData.fulfillmentStatus || 'unfulfilled'}
-Items: ${shopifyData.products.map((p) => `${p.name} (qty ${p.quantity})`).join(', ')}
+Items on this order (the order cannot ship before its slowest item - each item's production time is on its product page below):
+${shopifyData.products.map((p) => `  - ${p.name} (qty ${p.quantity})`).join('\n')}
 Tracking: ${
       shopifyData.trackingInfo.length
         ? shopifyData.trackingInfo
@@ -436,7 +535,9 @@ ${customerBlock || ''}${orderBlock}${productBlock}
 
 RULES:
 - Most items are handmade to order. Never promise a delivery date faster than the product's stated production time.
-- If a product's own description is shown above, trust its production time over any general estimate in the policies.
+- If a product's own description is shown above, trust its production time over any general estimate in the policies. Never guess an item's timeline from a similar-sounding product; if its page is not shown above, do not state a timeline for it.
+- An order ships no sooner than its SLOWEST item. Identify that item, lead with its timeline, and never imply the order is nearly ready because the quick items are.
+- Do not say whether items ship together or separately - you do not have that information.
 - If a notice above mentions a delay or a temporary change, reflect it in your answer.
 - Use the customer record above to work out which order they mean, even if they never gave an order number. Refer to orders by number so there is no confusion.
 - If they have more than one order, address each one they are asking about separately and say plainly which has shipped and which has not.
@@ -495,14 +596,19 @@ app.post('/api/process-email', async (req, res) => {
       shopifyData = await getShopifyOrder(initial.extractedOrderNumber);
     }
 
-    const orderItemNames = shopifyData ? shopifyData.products.map((p) => p.name) : [];
-    const customerItemNames = customer
-      ? customer.orders.reduce((acc, o) => acc.concat(o.items.map((i) => i.title)), [])
+    const orderProductIds = shopifyData
+      ? shopifyData.products.map((p) => p.productId)
+      : [];
+    const customerProductIds = customer
+      ? customer.orders.reduce(
+          (acc, o) => acc.concat(o.items.map((i) => i.productId)),
+          []
+        )
       : [];
 
     const products = await gatherProducts(
       initial.productKeywords,
-      orderItemNames.concat(customerItemNames)
+      orderProductIds.concat(customerProductIds)
     );
 
     // Pass 2: answer again, now with the real order and product data in hand.
