@@ -32,7 +32,7 @@ Q: What's your return policy?
 A: 30-day returns on most items if unused and in original packaging.
 
 Q: Can I customize sizes/colors?
-A: Yes! We offer custom orders. Email support@1cribessentials.com with your request.
+A: Yes! We offer custom orders. Email support@1cribessential.com with your request.
 
 Q: Do you ship internationally?
 A: Currently US only. International coming soon.
@@ -41,7 +41,7 @@ Q: What materials do you use?
 A: All handmade using premium materials. Details vary by product.
 
 Q: Can I order wholesale?
-A: Yes, email support@1cribessentials.com for bulk pricing.
+A: Yes, email support@1cribessential.com for bulk pricing.
 `;
 
 async function getShopifyToken() {
