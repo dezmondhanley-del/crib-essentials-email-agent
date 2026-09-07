@@ -19,6 +19,7 @@ let nextId = 1;
 
 const MONGODB_URI = process.env.MONGODB_URI;
 let dbReady = false;
+let dbError = null;
 let Lead = null;
 
 const leadSchema = new mongoose.Schema(
@@ -41,12 +42,15 @@ const leadSchema = new mongoose.Schema(
 if (MONGODB_URI) {
   Lead = mongoose.model('Lead', leadSchema);
   mongoose
+     mongoose
     .connect(MONGODB_URI, { serverSelectionTimeoutMS: 8000 })
     .then(() => {
       dbReady = true;
+      dbError = null;
       console.log('MongoDB connected - leads will persist');
     })
     .catch((err) => {
+      dbError = err.message;
       console.error('MongoDB connection failed, using memory:', err.message);
     });
 
@@ -485,7 +489,8 @@ app.get('/api/health', async (req, res) => {
   }
   res.json({
     status: 'ok',
-    storage: dbReady ? 'mongodb (persistent)' : 'in-memory (resets on restart)',
+        storage: dbReady ? 'mongodb (persistent)' : 'in-memory (resets on restart)',
+    dbError: dbError || null,
     leadsStored: leadCount,
     faqSource: process.env.SUPPORT_FAQ ? 'SUPPORT_FAQ env var' : 'built-in fallback',
     env: {
