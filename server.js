@@ -31,6 +31,8 @@ const leadSchema = new mongoose.Schema(
     productType: String,
     shopifyOrderData: Object,
     matchedProducts: [String],
+    customerOrders: [String],
+    customerTotalOrders: String,
     aiAnalysis: String,
     aiResponse: String,
     threadId: String,
@@ -271,6 +273,101 @@ function formatProducts(products) {
   return `\nRELEVANT PRODUCTS (from the live Shopify catalog - these production and shipping times override any general estimate in the FAQ):\n${lines.join('\n\n')}\n`;
 }
 
+const CUSTOMER_QUERY = `
+  query($q: String!) {
+    customers(first: 1, query: $q) {
+      edges {
+        node {
+          displayName
+          email
+          numberOfOrders
+          orders(first: 5, sortKey: CREATED_AT, reverse: true) {
+            edges {
+              node {
+                name
+                createdAt
+                displayFinancialStatus
+                displayFulfillmentStatus
+                totalPriceSet { shopMoney { amount } }
+                lineItems(first: 5) { edges { node { title quantity } } }
+                fulfillments(first: 3) { trackingInfo { number url company } }
+              }
+            }
+          }
+        }
+      }
+    }
+  }`;
+
+// Looks the sender up by email so we find their orders even when they never
+// quote an order number - which is most of the time.
+async function getCustomerContext(email) {
+  const clean = String(email || '').trim().toLowerCase();
+  if (!clean || clean.indexOf('@') === -1) return null;
+
+  try {
+    const data = await shopifyGraphQL(CUSTOMER_QUERY, { q: `email:${clean}` });
+    const edge = data.customers && data.customers.edges && data.customers.edges[0];
+    if (!edge) return null;
+    const c = edge.node;
+
+    return {
+      name: c.displayName,
+      email: c.email,
+      totalOrders: c.numberOfOrders,
+      orders: (c.orders.edges || []).map((oe) => {
+        const o = oe.node;
+        const tracking = [];
+        (o.fulfillments || []).forEach((f) => {
+          (f.trackingInfo || []).forEach((t) => {
+            tracking.push({ number: t.number, url: t.url, company: t.company });
+          });
+        });
+        return {
+          name: o.name,
+          createdAt: o.createdAt,
+          financial: o.displayFinancialStatus,
+          fulfillment: o.displayFulfillmentStatus,
+          total: o.totalPriceSet && o.totalPriceSet.shopMoney ? o.totalPriceSet.shopMoney.amount : null,
+          items: (o.lineItems.edges || []).map((le) => ({
+            title: le.node.title,
+            quantity: le.node.quantity,
+          })),
+          tracking: tracking,
+        };
+      }),
+    };
+  } catch (err) {
+    console.error('Customer lookup failed:', err.message);
+    return null;
+  }
+}
+
+function formatCustomer(cust) {
+  if (!cust) return '';
+  const lines = cust.orders.map((o) => {
+    const age = daysSince(o.createdAt);
+    const parts = [
+      `- ${o.name}, placed ${String(o.createdAt).slice(0, 10)}${age !== null ? ` (${age} days ago)` : ''} — ${o.financial}, ${o.fulfillment}, $${o.total}`,
+      `  Items: ${o.items.map((i) => `${i.title} x${i.quantity}`).join(', ')}`,
+    ];
+    parts.push(
+      o.tracking.length
+        ? `  Tracking: ${o.tracking.map((t) => `${t.company || ''} ${t.number} ${t.url || ''}`.trim()).join('; ')}`
+        : '  Tracking: none yet - this order has not shipped'
+    );
+    return parts.join('\n');
+  });
+
+  return `
+CUSTOMER RECORD (live from Shopify, matched on their email address):
+Name: ${cust.name}
+Orders placed with us: ${cust.totalOrders}
+Their recent orders, newest first:
+${lines.join('\n')}
+`;
+}
+
 async function getShopifyOrder(orderNumber) {
   try {
     const token = await getShopifyToken();
@@ -307,7 +404,7 @@ function daysSince(iso) {
   return Math.max(0, Math.floor(ms / 86400000));
 }
 
-async function askClaude(email, faqContext, shopifyData, productBlock) {
+async function askClaude(email, faqContext, shopifyData, productBlock, customerBlock) {
   let orderBlock = '';
   if (shopifyData) {
     const age = daysSince(shopifyData.createdAt);
@@ -335,15 +432,18 @@ CUSTOMER EMAIL:
 
 STORE POLICIES AND CURRENT NOTICES:
 ${faqContext}
-${orderBlock}${productBlock}
+${customerBlock || ''}${orderBlock}${productBlock}
 
 RULES:
 - Most items are handmade to order. Never promise a delivery date faster than the product's stated production time.
 - If a product's own description is shown above, trust its production time over any general estimate in the policies.
 - If a notice above mentions a delay or a temporary change, reflect it in your answer.
-- If the order is unfulfilled and older than its expected production window, acknowledge the wait honestly rather than restating the standard estimate.
-- Never invent tracking numbers, dates, prices or stock levels. If you do not have the information, say you will check and follow up.
-- Warm, brief, 2-4 sentences. Write as a real person at the brand, not a bot.
+- Use the customer record above to work out which order they mean, even if they never gave an order number. Refer to orders by number so there is no confusion.
+- If they have more than one order, address each one they are asking about separately and say plainly which has shipped and which has not.
+- Never say an order has shipped unless its fulfillment status says so, and never invent tracking numbers, dates, prices or stock levels.
+- If they are asking you to CHANGE something - a shipping address, a cancellation, a refund, swapping an item - you cannot do it. Say a human will take care of it and confirm shortly. Never imply the change has been made. If an order they want changed has already shipped, say so honestly.
+- If they are a repeat customer, a brief word of thanks is welcome, but do not overdo it.
+- Warm, brief, 2-5 sentences. Write as a real person at the brand, not a bot.
 
 Respond with ONLY raw JSON, no markdown fences:
 {
@@ -383,21 +483,32 @@ app.post('/api/process-email', async (req, res) => {
 
     const faq = faqContext && String(faqContext).trim() ? faqContext : getFaq();
 
+    // Look the sender up by email first - most people never quote an order number.
+    const customer = await getCustomerContext(from);
+    const customerBlock = formatCustomer(customer);
+
     // Pass 1: understand the email and pull out the order number / product hints.
-    const initial = await askClaude(body, faq, null, '');
+    const initial = await askClaude(body, faq, null, '', customerBlock);
 
     let shopifyData = null;
     if (initial.extractedOrderNumber) {
       shopifyData = await getShopifyOrder(initial.extractedOrderNumber);
     }
 
-    const lineItemNames = shopifyData ? shopifyData.products.map((p) => p.name) : [];
-    const products = await gatherProducts(initial.productKeywords, lineItemNames);
+    const orderItemNames = shopifyData ? shopifyData.products.map((p) => p.name) : [];
+    const customerItemNames = customer
+      ? customer.orders.reduce((acc, o) => acc.concat(o.items.map((i) => i.title)), [])
+      : [];
+
+    const products = await gatherProducts(
+      initial.productKeywords,
+      orderItemNames.concat(customerItemNames)
+    );
 
     // Pass 2: answer again, now with the real order and product data in hand.
     const needsSecondPass = Boolean(shopifyData) || products.length > 0;
     const final = needsSecondPass
-      ? await askClaude(body, faq, shopifyData, formatProducts(products))
+      ? await askClaude(body, faq, shopifyData, formatProducts(products), customerBlock)
       : initial;
 
     const saved = await saveLead({
@@ -408,6 +519,10 @@ app.post('/api/process-email', async (req, res) => {
       productType: final.type,
       shopifyOrderData: shopifyData,
       matchedProducts: products.map((p) => p.title),
+      customerOrders: customer
+        ? customer.orders.map((o) => `${o.name} (${o.fulfillment}, $${o.total})`)
+        : [],
+      customerTotalOrders: customer ? customer.totalOrders : null,
       aiAnalysis: final.summary,
       aiResponse: final.response,
       threadId: threadId || null,
@@ -542,6 +657,17 @@ app.get('/api/product-check', async (req, res) => {
   }
 
   res.json(out);
+});
+
+app.get('/api/customer-check', async (req, res) => {
+  try {
+    const email = req.query.email;
+    if (!email) return res.status(400).json({ error: 'Pass ?email=someone@example.com' });
+    const c = await getCustomerContext(email);
+    res.json({ ok: true, found: Boolean(c), customer: c });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
 app.get('/api/shopify-check', async (req, res) => {
