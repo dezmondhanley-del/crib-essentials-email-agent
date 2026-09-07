@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const mongoose = require('mongoose');
 const Anthropic = require('@anthropic-ai/sdk');
 require('dotenv').config();
 
@@ -9,10 +10,94 @@ app.use(express.json());
 
 const anthropic = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
 
-// In-memory lead store. Resets whenever the service restarts.
-const leads = [];
+// Leads go to MongoDB when MONGODB_URI is set. If the database is missing or
+// unreachable the service keeps running and falls back to memory, so a bad
+// connection string can never stop the bot from answering email.
+const memoryLeads = [];
 const MAX_LEADS = 500;
 let nextId = 1;
+
+const MONGODB_URI = process.env.MONGODB_URI;
+let dbReady = false;
+let Lead = null;
+
+const leadSchema = new mongoose.Schema(
+  {
+    email: String,
+    customerName: String,
+    question: String,
+    orderNumber: String,
+    productType: String,
+    shopifyOrderData: Object,
+    matchedProducts: [String],
+    aiAnalysis: String,
+    aiResponse: String,
+    status: { type: String, default: 'replied' },
+    createdAt: { type: Date, default: Date.now },
+  },
+  { versionKey: false }
+);
+
+if (MONGODB_URI) {
+  Lead = mongoose.model('Lead', leadSchema);
+  mongoose
+    .connect(MONGODB_URI, { serverSelectionTimeoutMS: 8000 })
+    .then(() => {
+      dbReady = true;
+      console.log('MongoDB connected - leads will persist');
+    })
+    .catch((err) => {
+      console.error('MongoDB connection failed, using memory:', err.message);
+    });
+
+  mongoose.connection.on('disconnected', () => {
+    dbReady = false;
+    console.error('MongoDB disconnected');
+  });
+  mongoose.connection.on('reconnected', () => {
+    dbReady = true;
+    console.log('MongoDB reconnected');
+  });
+} else {
+  console.warn('MONGODB_URI not set - leads are in memory and reset on restart');
+}
+
+async function saveLead(lead) {
+  if (dbReady && Lead) {
+    try {
+      const doc = await Lead.create(lead);
+      return doc.toObject();
+    } catch (err) {
+      console.error('Lead save to MongoDB failed, using memory:', err.message);
+    }
+  }
+  const withId = { ...lead, _id: String(nextId++) };
+  memoryLeads.unshift(withId);
+  if (memoryLeads.length > MAX_LEADS) memoryLeads.pop();
+  return withId;
+}
+
+async function listLeads() {
+  if (dbReady && Lead) {
+    try {
+      return await Lead.find().sort({ createdAt: -1 }).limit(MAX_LEADS).lean();
+    } catch (err) {
+      console.error('Lead read from MongoDB failed:', err.message);
+    }
+  }
+  return memoryLeads;
+}
+
+async function findLead(id) {
+  if (dbReady && Lead) {
+    try {
+      return await Lead.findById(id).lean();
+    } catch (err) {
+      console.error('Lead lookup failed:', err.message);
+    }
+  }
+  return memoryLeads.find((l) => l._id === id) || null;
+}
 
 const SHOPIFY_STORE = process.env.SHOPIFY_STORE || 'freemind-5328.myshopify.com';
 const SHOPIFY_API_VERSION = '2026-07';
@@ -308,8 +393,7 @@ app.post('/api/process-email', async (req, res) => {
       ? await askClaude(body, faq, shopifyData, formatProducts(products))
       : initial;
 
-    const lead = {
-      _id: String(nextId++),
+    const saved = await saveLead({
       email: from,
       customerName,
       question: body,
@@ -320,25 +404,32 @@ app.post('/api/process-email', async (req, res) => {
       aiAnalysis: final.summary,
       aiResponse: final.response,
       status: 'replied',
-      createdAt: new Date().toISOString(),
-    };
+      createdAt: new Date(),
+    });
 
-    leads.unshift(lead);
-    if (leads.length > MAX_LEADS) leads.pop();
-
-    res.json({ success: true, lead, response: final.response });
+    res.json({ success: true, lead: saved, response: final.response });
   } catch (error) {
     console.error('Error processing email:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-app.get('/api/leads', (req, res) => res.json(leads));
+app.get('/api/leads', async (req, res) => {
+  try {
+    res.json(await listLeads());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
-app.get('/api/leads/:id', (req, res) => {
-  const lead = leads.find((l) => l._id === req.params.id);
-  if (!lead) return res.status(404).json({ error: 'Not found' });
-  res.json(lead);
+app.get('/api/leads/:id', async (req, res) => {
+  try {
+    const lead = await findLead(req.params.id);
+    if (!lead) return res.status(404).json({ error: 'Not found' });
+    res.json(lead);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get('/api/product-check', async (req, res) => {
@@ -383,17 +474,26 @@ app.get('/api/shopify-check', async (req, res) => {
   }
 });
 
-app.get('/api/health', (req, res) => {
+app.get('/api/health', async (req, res) => {
+  let leadCount = memoryLeads.length;
+  if (dbReady && Lead) {
+    try {
+      leadCount = await Lead.countDocuments();
+    } catch (err) {
+      /* fall through to memory count */
+    }
+  }
   res.json({
     status: 'ok',
-    storage: 'in-memory',
-    leadsStored: leads.length,
+    storage: dbReady ? 'mongodb (persistent)' : 'in-memory (resets on restart)',
+    leadsStored: leadCount,
     faqSource: process.env.SUPPORT_FAQ ? 'SUPPORT_FAQ env var' : 'built-in fallback',
     env: {
       CLAUDE_API_KEY: process.env.CLAUDE_API_KEY ? 'set' : 'MISSING',
       SHOPIFY_CLIENT_ID: SHOPIFY_CLIENT_ID ? 'set' : 'MISSING',
       SHOPIFY_CLIENT_SECRET: SHOPIFY_CLIENT_SECRET ? 'set' : 'MISSING',
       SUPPORT_FAQ: process.env.SUPPORT_FAQ ? 'set' : 'not set (using built-in)',
+      MONGODB_URI: MONGODB_URI ? 'set' : 'not set (leads in memory)',
     },
   });
 });
