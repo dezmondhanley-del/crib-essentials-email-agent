@@ -1,6 +1,5 @@
 const express = require('express');
 const cors = require('cors');
-const mongoose = require('mongoose');
 const Anthropic = require('@anthropic-ai/sdk');
 require('dotenv').config();
 
@@ -8,27 +7,20 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-mongoose.connect(process.env.MONGODB_URI);
+const anthropic = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
 
-const leadSchema = new mongoose.Schema({
-  email: String,
-  customerName: String,
-  question: String,
-  orderNumber: String,
-  productType: String,
-  shopifyOrderData: Object,
-  aiAnalysis: String,
-  aiResponse: String,
-  status: { type: String, default: 'pending' },
-  createdAt: { type: Date, default: Date.now },
-  repliedAt: Date,
-});
+// In-memory lead store. Resets whenever the service restarts.
+const leads = [];
+const MAX_LEADS = 500;
+let nextId = 1;
 
-const Lead = mongoose.model('Lead', leadSchema);
+const SHOPIFY_STORE = process.env.SHOPIFY_STORE || 'freemind-5328.myshopify.com';
+const SHOPIFY_API_VERSION = '2026-07';
+const SHOPIFY_CLIENT_ID = process.env.SHOPIFY_CLIENT_ID;
+const SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET;
 
-const anthropic = new Anthropic({
-  apiKey: process.env.CLAUDE_API_KEY,
-});
+let cachedShopifyToken = null;
+let shopifyTokenExpiresAt = 0;
 
 const DEFAULT_FAQ = `
 Q: How long does shipping take?
@@ -53,43 +45,58 @@ Q: Can I order wholesale?
 A: Yes, email support@1cribessentials.com for bulk pricing.
 `;
 
+async function getShopifyToken() {
+  if (process.env.SHOPIFY_ACCESS_TOKEN) return process.env.SHOPIFY_ACCESS_TOKEN;
+  if (cachedShopifyToken && Date.now() < shopifyTokenExpiresAt) return cachedShopifyToken;
+  if (!SHOPIFY_CLIENT_ID || !SHOPIFY_CLIENT_SECRET) {
+    throw new Error('SHOPIFY_CLIENT_ID / SHOPIFY_CLIENT_SECRET are not set');
+  }
+
+  const res = await fetch(`https://${SHOPIFY_STORE}/admin/oauth/access_token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      client_id: SHOPIFY_CLIENT_ID,
+      client_secret: SHOPIFY_CLIENT_SECRET,
+      grant_type: 'client_credentials',
+    }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.access_token) {
+    throw new Error(`Shopify token request failed (HTTP ${res.status}): ${JSON.stringify(data)}`);
+  }
+
+  cachedShopifyToken = data.access_token;
+  shopifyTokenExpiresAt = Date.now() + ((data.expires_in || 86399) - 300) * 1000;
+  return cachedShopifyToken;
+}
+
 async function getShopifyOrder(orderNumber) {
   try {
-    const shopifyUrl = `https://1cribessentials.shop/admin/api/2024-01/orders.json?name=${orderNumber}&status=any`;
-    const response = await fetch(shopifyUrl, {
-      method: 'GET',
-      headers: {
-        'X-Shopify-Access-Token': process.env.SHOPIFY_ACCESS_TOKEN,
-        'Content-Type': 'application/json',
-      },
-    });
+    const token = await getShopifyToken();
+    const url = `https://${SHOPIFY_STORE}/admin/api/${SHOPIFY_API_VERSION}/orders.json?name=${encodeURIComponent(orderNumber)}&status=any`;
+    const response = await fetch(url, { headers: { 'X-Shopify-Access-Token': token } });
+    const data = await response.json().catch(() => ({}));
 
-    const data = await response.json();
-    if (data.orders && data.orders.length > 0) {
-      const order = data.orders[0];
-      return {
-        orderNumber: order.order_number,
-        status: order.financial_status,
-        fulfillmentStatus: order.fulfillment_status,
-        createdAt: order.created_at,
-        total: order.total_price,
-        products: order.line_items.map((item) => ({
-          name: item.name,
-          quantity: item.quantity,
-        })),
-        trackingInfo: order.fulfillments
-          ? order.fulfillments.map((f) => ({
-              trackingNumber: f.tracking_number || 'N/A',
-              trackingUrl: f.tracking_url || 'N/A',
-              status: f.status,
-              createdAt: f.created_at,
-            }))
-          : [],
-      };
-    }
-    return null;
+    if (!data.orders || data.orders.length === 0) return null;
+    const order = data.orders[0];
+
+    return {
+      orderNumber: order.order_number,
+      status: order.financial_status,
+      fulfillmentStatus: order.fulfillment_status,
+      createdAt: order.created_at,
+      total: order.total_price,
+      products: (order.line_items || []).map((i) => ({ name: i.name, quantity: i.quantity })),
+      trackingInfo: (order.fulfillments || []).map((f) => ({
+        trackingNumber: f.tracking_number || 'N/A',
+        trackingUrl: f.tracking_url || 'N/A',
+        status: f.status,
+      })),
+    };
   } catch (error) {
-    console.error('Error fetching Shopify order:', error);
+    console.error('Shopify lookup failed:', error.message);
     return null;
   }
 }
@@ -101,12 +108,10 @@ Order Number: ${shopifyData.orderNumber}
 Status: ${shopifyData.status}
 Fulfillment Status: ${shopifyData.fulfillmentStatus}
 Products: ${shopifyData.products.map((p) => `${p.name} (Qty: ${p.quantity})`).join(', ')}
-Tracking Info: ${
-        shopifyData.trackingInfo && shopifyData.trackingInfo.length > 0
-          ? shopifyData.trackingInfo
-              .map((t) => `Tracking: ${t.trackingNumber} (Status: ${t.status}) - ${t.trackingUrl}`)
-              .join('; ')
-          : 'No tracking info available yet'
+Tracking: ${
+        shopifyData.trackingInfo.length
+          ? shopifyData.trackingInfo.map((t) => `${t.trackingNumber} (${t.status}) ${t.trackingUrl}`).join('; ')
+          : 'No tracking info yet'
       }`
     : '';
 
@@ -126,7 +131,7 @@ Please:
 3. Generate a helpful, friendly response in 2-3 sentences
 4. Keep it personal and brand-appropriate for Crib Essentials
 
-Respond with ONLY raw JSON, no markdown fences, in this shape:
+Respond with ONLY raw JSON, no markdown fences:
 {
   "type": "order_inquiry" | "product_question" | "general_support",
   "summary": "brief summary of what customer is asking",
@@ -140,16 +145,16 @@ Respond with ONLY raw JSON, no markdown fences, in this shape:
     messages: [{ role: 'user', content: prompt }],
   });
 
-  let responseText = message.content[0].text.trim();
-  responseText = responseText.replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim();
+  let text = message.content[0].text.trim();
+  text = text.replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim();
 
   try {
-    return JSON.parse(responseText);
+    return JSON.parse(text);
   } catch (e) {
     return {
       type: 'general_support',
       summary: 'Could not parse AI response',
-      response: responseText,
+      response: text,
       extractedOrderNumber: null,
     };
   }
@@ -157,77 +162,4 @@ Respond with ONLY raw JSON, no markdown fences, in this shape:
 
 app.post('/api/process-email', async (req, res) => {
   try {
-    const { from, customerName, subject, body, faqContext = DEFAULT_FAQ } = req.body;
-
-    const initialAnalysis = await analyzeEmailWithClaude(body, faqContext, null);
-
-    let shopifyData = null;
-    if (initialAnalysis.extractedOrderNumber) {
-      shopifyData = await getShopifyOrder(initialAnalysis.extractedOrderNumber);
-    }
-
-    const finalAnalysis = shopifyData
-      ? await analyzeEmailWithClaude(body, faqContext, shopifyData)
-      : initialAnalysis;
-
-    const lead = new Lead({
-      email: from,
-      customerName,
-      question: body,
-      orderNumber: finalAnalysis.extractedOrderNumber,
-      productType: finalAnalysis.type,
-      shopifyOrderData: shopifyData,
-      aiAnalysis: finalAnalysis.summary,
-      aiResponse: finalAnalysis.response,
-      status: 'replied',
-      repliedAt: new Date(),
-    });
-
-    await lead.save();
-
-    res.json({
-      success: true,
-      lead: lead,
-      response: finalAnalysis.response,
-    });
-  } catch (error) {
-    console.error('Error processing email:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.get('/api/leads', async (req, res) => {
-  try {
-    const leads = await Lead.find().sort({ createdAt: -1 });
-    res.json(leads);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.get('/api/leads/:id', async (req, res) => {
-  try {
-    const lead = await Lead.findById(req.params.id);
-    res.json(lead);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.patch('/api/leads/:id', async (req, res) => {
-  try {
-    const lead = await Lead.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    res.json(lead);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok' });
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+    const { from, customerName, body, faqContext = DEFAULT_FAQ } =
