@@ -534,10 +534,15 @@ ${faqContext}
 ${customerBlock || ''}${orderBlock}${productBlock}
 
 RULES:
-- Most items are handmade to order. Never promise a delivery date faster than the product's stated production time.
-- If a product's own description is shown above, trust its production time over any general estimate in the policies. Never guess an item's timeline from a similar-sounding product; if its page is not shown above, do not state a timeline for it.
-- An order ships no sooner than its SLOWEST item. Identify that item, lead with its timeline, and never imply the order is nearly ready because the quick items are.
-- Do not say whether items ship together or separately - you do not have that information.
+- Most items are handmade to order. Never promise a delivery date faster than the stated production time.
+- WHICH SOURCE TO BELIEVE, in this order, highest first:
+  1. CURRENT NOTICES in the policies - these are written today and beat everything else.
+  2. The rest of the STORE POLICIES above - these are kept up to date by hand.
+  3. A product page description - use it only for details the policies do not cover, such as dimensions, materials or installation.
+  If the policies and a product page disagree on a production time, the policies are right and the product page is out of date. Never quote a product page timeline that contradicts the policies.
+- Never guess an item's timeline from a similar-sounding product. If neither the policies nor its product page covers it, do not state a timeline at all.
+- An order ships no sooner than its SLOWEST item unless the policies say items ship as they are ready. Identify the slowest item and lead with its timeline; never imply the order is nearly ready because the quick items are.
+- Never state where a specific parcel or item currently is unless live order data is shown above. Without it, describe what usually happens and ask for the order number.
 - If a notice above mentions a delay or a temporary change, reflect it in your answer.
 - Use the customer record above to work out which order they mean, even if they never gave an order number. Refer to orders by number so there is no confusion.
 - If they have more than one order, address each one they are asking about separately and say plainly which has shipped and which has not.
