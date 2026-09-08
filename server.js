@@ -1512,6 +1512,63 @@ app.post('/api/leads/:id/send', async (req, res) => {
   }
 });
 
+// Dezmond types the answer in his own words; this tidies it up. Spelling,
+// grammar, tone - never the facts. He is the human here, so nothing he wrote
+// is second-guessed or flagged; only the sign-off is enforced.
+app.post('/api/leads/:id/polish', async (req, res) => {
+  if (!checkToken(req, res)) return;
+  try {
+    const text = String((req.body && req.body.text) || '').trim();
+    if (!text) return res.status(400).json({ error: 'Nothing to polish.' });
+    if (text.length > 6000) return res.status(413).json({ error: 'That is too long to polish in one go.' });
+    const lead = await findLead(req.params.id);
+    const customerMsg = lead && lead.question ? String(lead.question).slice(0, 1500) : '';
+    const firstName = lead && lead.customerName ? String(lead.customerName).split(' ')[0] : '';
+    const q = '"""';
+
+    const prompt = `You are the editor for Crib Essentials, a small handmade home decor brand in Dallas. The owner has typed a reply to a customer. Rewrite it so it reads professionally, warmly and clearly - correct spelling, grammar, punctuation and capitalisation, smooth the wording, keep it human.
+
+RULES - these matter more than style:
+- Keep EVERY fact exactly as written: every number, date, day, price, tracking number, product name, order number, decision ("refund approved", "we'll ship Tuesday", "can't cancel") and promise. Do not add any fact, timeline, policy, apology or reassurance that is not in the owner's text. Do not remove anything he said. If he answered the customer's question, the rewrite answers it the same way.
+- Keep his meaning and his decisions. If he said no, it stays no. If he said yes, it stays yes.
+- Keep roughly the same length - this is a clean-up, not an expansion. Short stays short.
+- Speak as the brand: "we", "us", "our team", or "I". Never name any staff member. Never mention AI or editing.
+- Use the customer's first name only if the owner used it${firstName ? ` (the customer's first name is ${firstName})` : ''}.
+- Write in the same language the owner wrote in.
+- End with "- Crib Essentials" on its own line, with a blank line before it, and nothing after it.
+
+${customerMsg ? `THE CUSTOMER HAD WRITTEN (context only - do not answer anything the owner did not answer):
+${q}
+${customerMsg}
+${q}
+
+` : ''}THE OWNER'S REPLY, AS TYPED:
+${q}
+${text}
+${q}
+
+Respond with ONLY the rewritten reply text. No JSON, no quotes, no commentary.`;
+
+    const message = await anthropic.messages.create({
+      model: 'claude-sonnet-4-5',
+      max_tokens: 1200,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    let out = String(message.content[0].text || '').trim();
+    out = out.replace(/^```[a-z]*\s*/i, '').replace(/```$/, '').replace(/^"+|"+$/g, '').trim();
+    if (!out) return res.status(502).json({ error: 'The editor came back empty - try again.' });
+    // Sign-off only; no guess-checking on the owner's own words.
+    const signoff = /\n*\s*[-–—]?\s*(the\s+)?crib essentials(\s+team)?\s*[.!]?\s*$/i;
+    let before = null;
+    while (before !== out) { before = out; out = out.replace(signoff, '').trim(); }
+    out = `${out}\n\n- Crib Essentials`;
+    res.json({ ok: true, text: out });
+  } catch (err) {
+    console.error('Polish failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Older leads were saved before tone options existed. The dashboard calls
 // this once for such a lead and the three drafts get generated and stored.
 app.post('/api/leads/:id/drafts', async (req, res) => {
@@ -2066,7 +2123,7 @@ app.get('/api/health', async (req, res) => {
   }
   res.json({
     status: 'ok',
-    version: 'v14.0 - three real answers, order tags/notes, photo replies',
+    version: 'v14.1 - Your answer tab + Polish',
     storage: dbReady ? 'mongodb (persistent)' : 'in-memory (resets on restart)',
     dbError: dbError || null,
     leadsStored: leadCount,
