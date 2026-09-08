@@ -73,13 +73,15 @@
 
   /* ---- conversation list ---- */
   .list{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;min-width:0}
-  .tabs{display:flex;gap:1px;padding:10px 6px 8px;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+  .tabs{display:flex;flex-wrap:wrap;gap:1px 2px;padding:8px 6px 6px;border-bottom:1px solid var(--line)}
   .tabs::-webkit-scrollbar{display:none}
   .tab{padding:5px 7px;border-radius:999px;border:1px solid transparent;background:transparent;font:inherit;font-size:11.5px;color:var(--muted);cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:5px;flex:none}
   .tab .n{font-size:10px;background:var(--soft);color:var(--muted);border-radius:999px;padding:1px 4px;min-width:14px;text-align:center}
   .tab.on{background:var(--ink);color:#fff;font-weight:600}
   .tab.on .n{background:rgba(255,255,255,.2);color:#fff}
-  .tab[data-f="needs"].on{background:var(--accent)}
+  .tab[data-f="needs"].on,.tab[data-f="rem"].on{background:var(--accent)}
+  .tab .n.hot{background:var(--accent);color:#fff}
+  .tab.on .n.hot{background:rgba(255,255,255,.28)}
   .search{padding:8px 10px;border-bottom:1px solid var(--line)}
   .search input{width:100%;padding:8px 12px;border:1px solid var(--line);border-radius:999px;font:inherit;font-size:13px;background:var(--soft);color:var(--ink)}
   .search input:focus{outline:0;border-color:var(--ink);background:#fff}
@@ -147,6 +149,37 @@
   .hist.open{display:flex}
   .hist .m{opacity:.85}
   .compose{border-top:1px solid var(--line);padding:12px 20px 14px;background:var(--panel)}
+  /* Reminders */
+  .radd{padding:10px 12px;border-bottom:1px solid var(--line);background:var(--panel)}
+  .radd form{display:flex;flex-wrap:wrap;gap:6px}
+  .radd input[type=text]{flex:1 1 100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font:inherit;font-size:13px;background:#fff}
+  .radd select,.radd input[type=date]{flex:1 1 110px;padding:7px 9px;border:1px solid var(--line);border-radius:9px;font:inherit;font-size:12.5px;background:#fff;color:var(--ink)}
+  .radd .btn{padding:7px 13px;font-size:13px;flex:none}
+  .rgrp{padding:10px 12px 4px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+  .rgrp.late{color:var(--accent-ink)}
+  .rem{display:flex;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);align-items:flex-start;background:var(--panel)}
+  .rem.late{background:var(--accent-soft)}
+  .rem.done{opacity:.55}
+  .rem.done .rt{text-decoration:line-through}
+  .rem .tick{flex:none;width:22px;height:22px;border-radius:50%;border:2px solid var(--line);background:#fff;cursor:pointer;font-size:13px;line-height:18px;text-align:center;color:transparent;padding:0}
+  .rem .tick:hover{border-color:var(--accent)}
+  .rem.done .tick{background:var(--good);border-color:var(--good);color:#fff}
+  .rem .rb{flex:1;min-width:0;cursor:pointer}
+  .rem .rt{font-size:13.5px;line-height:1.35}
+  .rem .rm{font-size:11.5px;color:var(--muted);margin-top:2px}
+  .rem .rm b{color:var(--ink);font-weight:600}
+  .rem .del{flex:none;background:none;border:0;color:var(--muted);font-size:16px;cursor:pointer;padding:0 2px;line-height:1}
+  .rem .del:hover{color:var(--accent)}
+  .rshow{display:block;width:100%;background:none;border:0;padding:12px;font:inherit;font-size:12.5px;color:var(--muted);cursor:pointer;text-decoration:underline}
+  .remind{margin-bottom:10px}
+  .remind .rlink{background:none;border:1px dashed var(--line);border-radius:9px;padding:7px 12px;font:inherit;font-size:12.5px;color:var(--muted);cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+  .remind .rlink:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .remind form{display:none;margin-top:8px;gap:6px;flex-wrap:wrap;background:var(--soft);border-radius:10px;padding:8px}
+  .remind.open form{display:flex}
+  .remind input[type=text]{flex:1 1 100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:13px;background:#fff}
+  .remind select,.remind input[type=date]{flex:1 1 120px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:12.5px;background:#fff;color:var(--ink)}
+  .remind .btn{padding:7px 13px;font-size:13px;flex:none}
+  .remind .rsaved{font-size:12px;color:var(--good);align-self:center}
   .notice{background:var(--soft);border-radius:10px;padding:9px 12px;font-size:13px;color:var(--muted);margin-bottom:10px}
   .notice b{color:var(--ink)}
   .notice.needs{background:var(--accent-soft);color:var(--accent-ink);border-left:3px solid var(--accent)}
@@ -247,7 +280,7 @@
   <h1><span class="logo">CE</span>Inbox</h1>
   <div class="st"><span class="dot" id="dot"></span><span id="statusText">connecting…</span></div>
   <div class="spacer"></div>
-  <div class="count"><b id="c-needs">0</b> need you · <b id="c-open">0</b> awaiting reply · <b id="c-total">0</b> conversations</div>
+  <div class="count"><b id="c-needs">0</b> need you · <b id="c-open">0</b> awaiting reply · <b id="c-rem">0</b> reminders due · <b id="c-total">0</b> conversations</div>
 </div>
 <div id="errBox"></div>
 <div class="app">
@@ -258,6 +291,7 @@
       <button class="tab" data-f="open">Open <span class="n" id="n-open">0</span></button>
       <button class="tab" data-f="sent">Replied <span class="n" id="n-sent">0</span></button>
       <button class="tab" data-f="other" title="Vendors, collabs, newsletters - anyone who is not a customer">Other <span class="n" id="n-other">0</span></button>
+      <button class="tab" data-f="rem" title="Things to do after replying - ship it, refund it, check on it">Reminders <span class="n" id="n-rem">0</span></button>
     </div>
     <div class="search"><input id="q" type="search" placeholder="Search name, email, order #, subject…" autocomplete="off"></div>
     <div class="rows" id="rows"><div class="empty">Loading…</div></div>
@@ -274,6 +308,7 @@ var API_URL = (/^https?:$/.test(location.protocol) && !/netlify\.app$/.test(loca
   ? location.origin : 'https://crib-essentials-email-agent.onrender.com';
 
 var leads = [], convos = [], filter = 'all', query = '', selectedKey = null, historyOpen = {}, noToken = false;
+var reminders = [], showDone = false, remindOpen = {};
 
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
   return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
@@ -345,6 +380,10 @@ async function load(){
     if(!r.ok) throw new Error('Backend returned ' + r.status);
     var data = await r.json();
     leads = Array.isArray(data) ? data : [];
+    try{
+      var rr = await fetch(API_URL + '/api/reminders', { headers: { 'x-dashboard-token': token } });
+      if(rr.ok){ var rd = await rr.json(); reminders = Array.isArray(rd) ? rd : []; }
+    }catch(e){}
     document.getElementById('errBox').innerHTML = '';
     setStatus(true, 'Connected · ' + new Date().toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}));
     group();
@@ -394,6 +433,14 @@ function render(){
   document.getElementById('n-open').textContent = open;
   document.getElementById('n-sent').textContent = customers.length - open;
   document.getElementById('n-other').textContent = others;
+  var due = reminders.filter(function(r){ return !r.done && isDue(r); }).length;
+  var pending = reminders.filter(function(r){ return !r.done; }).length;
+  document.getElementById('c-rem').textContent = due;
+  var nRem = document.getElementById('n-rem');
+  nRem.textContent = pending;
+  nRem.classList.toggle('hot', due > 0);
+
+  if(filter === 'rem'){ renderReminders(); renderConvo(); renderCustomer(); return; }
 
   var q = query.trim().toLowerCase();
   var shown = convos.filter(function(c){
@@ -476,6 +523,180 @@ function openLightbox(src){
   document.body.appendChild(lb);
 }
 
+// ---- Reminders ----
+function startOfDay(d){ var x = new Date(d); x.setHours(0,0,0,0); return x; }
+function isDue(r){ if(!r.dueAt) return false; return new Date(r.dueAt) <= new Date(); }
+function isOverdue(r){ if(!r.dueAt) return false; return startOfDay(r.dueAt) < startOfDay(new Date()); }
+function isToday(r){ if(!r.dueAt) return false; return startOfDay(r.dueAt).getTime() === startOfDay(new Date()).getTime(); }
+function dueLabel(r){
+  if(!r.dueAt) return 'No date';
+  var d = new Date(r.dueAt), t = startOfDay(new Date()), x = startOfDay(d);
+  var diff = Math.round((x - t) / 86400000);
+  if(diff === 0) return 'Today';
+  if(diff === 1) return 'Tomorrow';
+  if(diff === -1) return 'Yesterday';
+  if(diff < 0) return Math.abs(diff) + ' days ago';
+  if(diff < 7) return d.toLocaleDateString([], {weekday:'long'});
+  return d.toLocaleDateString([], {month:'short', day:'numeric'});
+}
+// "today" / "tomorrow" / "3" / "7" / an ISO date -> a Date at 9am local.
+function dueFromChoice(choice, dateStr){
+  var d = new Date();
+  if(choice === 'date'){ if(!dateStr) return null; var p = dateStr.split('-'); d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2])); }
+  else if(choice === 'none') return null;
+  else if(choice === 'tomorrow') d.setDate(d.getDate() + 1);
+  else if(/^\d+$/.test(choice)) d.setDate(d.getDate() + Number(choice));
+  d.setHours(9,0,0,0);
+  return d.toISOString();
+}
+function dueOptions(){
+  return '<option value="today">Today</option><option value="tomorrow" selected>Tomorrow</option><option value="3">In 3 days</option><option value="7">Next week</option><option value="date">Pick a date…</option><option value="none">No date</option>';
+}
+function wireDue(sel, dateInput){
+  sel.onchange = function(){ dateInput.style.display = sel.value === 'date' ? 'block' : 'none'; if(sel.value === 'date') dateInput.focus(); };
+}
+function convoForReminder(r){
+  return convos.filter(function(c){
+    return (r.threadId && c.key === r.threadId) || c.items.some(function(l){ return String(l._id) === String(r.leadId); });
+  })[0];
+}
+function remItem(r){
+  var late = !r.done && isOverdue(r);
+  var c = convoForReminder(r);
+  var meta = [];
+  if(r.customerName || r.email) meta.push('<b>' + esc(r.customerName || r.email) + '</b>');
+  if(r.orderNumber) meta.push('#' + esc(String(r.orderNumber).replace(/^#/, '')));
+  meta.push(r.done ? 'Done ' + esc(dueLabel({dueAt: r.doneAt}).toLowerCase()) : esc(dueLabel(r)));
+  return '<div class="rem' + (late ? ' late' : '') + (r.done ? ' done' : '') + '" data-r="' + esc(r._id) + '">' +
+    '<button class="tick" title="' + (r.done ? 'Mark not done' : 'Mark done') + '">&#10003;</button>' +
+    '<div class="rb"' + (c ? ' data-open="' + esc(c.key) + '" title="Open conversation"' : '') + '><div class="rt">' + esc(r.text) + '</div><div class="rm">' + meta.join(' · ') + (c ? ' · open' : '') + '</div></div>' +
+    '<button class="del" title="Delete">&times;</button></div>';
+}
+function renderReminders(){
+  var rows = document.getElementById('rows');
+  var q = query.trim().toLowerCase();
+  var list = reminders.filter(function(r){
+    if(!q) return true;
+    return [r.text, r.customerName, r.email, r.orderNumber].join(' ').toLowerCase().indexOf(q) >= 0;
+  });
+  var open = list.filter(function(r){ return !r.done; }).sort(function(a,b){
+    if(!a.dueAt && b.dueAt) return 1; if(a.dueAt && !b.dueAt) return -1;
+    return new Date(a.dueAt || 0) - new Date(b.dueAt || 0);
+  });
+  var done = list.filter(function(r){ return r.done; }).sort(function(a,b){ return new Date(b.doneAt || 0) - new Date(a.doneAt || 0); });
+  var groups = [
+    ['Overdue', open.filter(isOverdue), 'late'],
+    ['Today', open.filter(isToday), ''],
+    ['Coming up', open.filter(function(r){ return r.dueAt && !isOverdue(r) && !isToday(r); }), ''],
+    ['No date', open.filter(function(r){ return !r.dueAt; }), ''],
+  ];
+  var html = '<div class="radd"><form id="remAdd">' +
+    '<input type="text" id="remText" placeholder="Remind me to… e.g. ship Kenneth\'s Astro Mirror" autocomplete="off">' +
+    '<select id="remWhen">' + dueOptions() + '</select><input type="date" id="remDate" style="display:none">' +
+    '<button class="btn" type="submit">Add</button></form></div>';
+  if(!open.length && !done.length){
+    html += '<div class="empty">Nothing to remember yet. Add one above, or tap "Remind me" on any conversation.</div>';
+  }
+  groups.forEach(function(g){
+    if(!g[1].length) return;
+    html += '<div class="rgrp ' + g[2] + '">' + g[0] + ' · ' + g[1].length + '</div>' + g[1].map(remItem).join('');
+  });
+  if(done.length){
+    html += '<button class="rshow" id="remShowDone">' + (showDone ? 'Hide' : 'Show') + ' ' + done.length + ' done</button>';
+    if(showDone) html += done.slice(0, 30).map(remItem).join('');
+  }
+  rows.innerHTML = html;
+
+  var form = document.getElementById('remAdd');
+  wireDue(document.getElementById('remWhen'), document.getElementById('remDate'));
+  form.onsubmit = function(e){
+    e.preventDefault();
+    var text = document.getElementById('remText').value.trim();
+    if(!text) return;
+    var dueAt = dueFromChoice(document.getElementById('remWhen').value, document.getElementById('remDate').value);
+    saveReminder({ text: text, dueAt: dueAt }, form.querySelector('.btn'));
+  };
+  var sd = document.getElementById('remShowDone');
+  if(sd) sd.onclick = function(){ showDone = !showDone; renderReminders(); };
+  Array.prototype.forEach.call(rows.querySelectorAll('.rem'), function(el){
+    var id = el.getAttribute('data-r');
+    var r = reminders.filter(function(x){ return String(x._id) === id; })[0];
+    el.querySelector('.tick').onclick = function(){ updateReminder(id, { action: r && r.done ? 'undo' : 'done' }); };
+    el.querySelector('.del').onclick = function(){ if(window.confirm('Delete this reminder?')) updateReminder(id, { action: 'delete' }); };
+    var body = el.querySelector('.rb');
+    var openKey = body.getAttribute('data-open');
+    if(openKey){ body.onclick = function(){ selectedKey = openKey; document.querySelector('.app').classList.add('showconvo'); renderConvo(); renderCustomer(); }; }
+  });
+}
+async function remFetch(path, payload){
+  var token = getToken();
+  if(!token){ askToken('Enter your dashboard token to save reminders.'); throw new Error('no token'); }
+  var r = await fetch(API_URL + path, { method:'POST', headers:{ 'Content-Type':'application/json', 'x-dashboard-token': token }, body: JSON.stringify(payload) });
+  var d = await r.json().catch(function(){ return {}; });
+  if(!r.ok) throw new Error(d.error || ('Server returned ' + r.status));
+  return d;
+}
+async function saveReminder(payload, btn){
+  if(btn){ btn.disabled = true; }
+  try{
+    var d = await remFetch('/api/reminders', payload);
+    reminders.unshift(d.reminder);
+    render();
+    return d.reminder;
+  }catch(err){
+    if(err.message !== 'no token') window.alert('Could not save the reminder: ' + err.message);
+  }finally{ if(btn) btn.disabled = false; }
+}
+async function updateReminder(id, payload){
+  try{
+    var d = await remFetch('/api/reminders/' + encodeURIComponent(id), payload);
+    if(d.deleted) reminders = reminders.filter(function(x){ return String(x._id) !== String(id); });
+    else reminders = reminders.map(function(x){ return String(x._id) === String(id) ? d.reminder : x; });
+    render();
+  }catch(err){
+    if(err.message !== 'no token') window.alert('Could not update the reminder: ' + err.message);
+  }
+}
+// Sensible default wording for the "Remind me" box on a conversation.
+function suggestReminder(c){
+  var l = c.latest;
+  var who = (c.name || c.email || 'them').split(' ')[0];
+  var ord = l.orderNumber ? ' (order #' + String(l.orderNumber).replace(/^#/, '') + ')' : '';
+  if(l.flagReason && !/^Read before sending/i.test(l.flagReason)){
+    var f = l.flagReason.replace(/\s*Read before sending.*$/i, '').trim();
+    return f.charAt(0).toUpperCase() + f.slice(1) + ' - ' + who + ord;
+  }
+  return 'Follow up with ' + who + ord;
+}
+function remindBlock(c){
+  var l = c.latest;
+  var mine = reminders.filter(function(r){ return !r.done && convoForReminder(r) && convoForReminder(r).key === c.key; });
+  var html = '<div class="remind' + (remindOpen[c.key] ? ' open' : '') + '" id="remindBox">';
+  html += '<button class="rlink" type="button" id="remindToggle">&#9200; ' + (mine.length ? mine.length + ' reminder' + (mine.length === 1 ? '' : 's') + ' set · add another' : 'Remind me to do something for this one') + '</button>';
+  html += '<form id="remindForm"><input type="text" id="remindText" value="' + esc(suggestReminder(c)) + '" autocomplete="off">' +
+    '<select id="remindWhen">' + dueOptions() + '</select><input type="date" id="remindDate" style="display:none">' +
+    '<button class="btn" type="submit">Save reminder</button><span class="rsaved" id="remindSaved"></span></form></div>';
+  return html;
+}
+function wireRemind(c){
+  var box = document.getElementById('remindBox');
+  if(!box) return;
+  document.getElementById('remindToggle').onclick = function(){ remindOpen[c.key] = !remindOpen[c.key]; box.classList.toggle('open', remindOpen[c.key]); if(remindOpen[c.key]) document.getElementById('remindText').focus(); };
+  wireDue(document.getElementById('remindWhen'), document.getElementById('remindDate'));
+  document.getElementById('remindForm').onsubmit = async function(e){
+    e.preventDefault();
+    var text = document.getElementById('remindText').value.trim();
+    if(!text) return;
+    var l = c.latest;
+    var saved = await saveReminder({
+      text: text,
+      dueAt: dueFromChoice(document.getElementById('remindWhen').value, document.getElementById('remindDate').value),
+      leadId: l._id, threadId: l.threadId || null, customerName: c.name, email: c.email, orderNumber: l.orderNumber || null,
+    }, e.target.querySelector('.btn'));
+    if(saved){ remindOpen[c.key] = false; renderConvo(); }
+  };
+}
+
 function renderConvo(){
   var el = document.getElementById('convo');
   var c = selected();
@@ -518,6 +739,7 @@ function renderConvo(){
   // Compose for the latest email in the thread.
   var drafts = draftsFor(latest);
   html += '<div class="compose">';
+  html += remindBlock(c);
   if(latest.status === 'sent'){
     html += '<div class="notice sent">Replied ' + esc(new Date(latest.sentAt).toLocaleString()) + '. A new email from them will reopen this conversation.</div>';
   } else {
@@ -558,6 +780,7 @@ function renderConvo(){
 
   var moreBtn = document.getElementById('moreBtn');
   if(moreBtn){ moreBtn.onclick = function(){ historyOpen[c.key] = !historyOpen[c.key]; renderConvo(); }; }
+  wireRemind(c);
 
   var sendBtn = document.getElementById('sendBtn');
   if(sendBtn){
