@@ -48,7 +48,11 @@ const leadSchema = new mongoose.Schema(
     cart: Object,
     // The email exactly as it arrived, and the quoted history parsed into messages.
     rawBody: String,
-    thread: [{ name: String, email: String, date: String, text: String, mine: Boolean }],
+    thread: [{
+      name: String, email: String, date: String, text: String, mine: Boolean,
+      // Gmail attachment pointers (filename, mimeType, size, attachmentId, messageId).
+      attachments: [Object],
+    }],
     sentAt: Date,
     sentBody: String,
     createdAt: { type: Date, default: Date.now },
@@ -759,6 +763,25 @@ function stripQuoteMarks(line) {
   return line.replace(/^(\s*>)+\s?/, '');
 }
 
+// Mobile mail apps tack "Sent from my iPhone" onto the end - sometimes on the
+// same line as the last sentence - and our own replies carry the store
+// signature. Neither is part of what anyone said.
+function stripSignatures(text) {
+  let t = String(text || '').replace(/\r\n?/g, '\n');
+  t = t
+    .split('\n')
+    .filter((line) => !/^\s*(sent from (my|yahoo)|get outlook for|sent via)\b/i.test(line))
+    .join('\n');
+  let prev;
+  do {
+    prev = t;
+    t = t.replace(/[\s ]*sent from my \w+[^\n]*$/i, '').trimEnd();
+  } while (t !== prev);
+  t = t.replace(/(\n\s*)*(crib essentials|@1cribessentials)\s*$/i, '');
+  t = t.replace(/(\n\s*)*(crib essentials|@1cribessentials)\s*$/i, '');
+  return t.replace(/\n{3,}/g, '\n\n').trim();
+}
+
 function parseHeader(line) {
   // "On Sat, Aug 29, 2026 at 11:01 AM Davaughn Paige <x@y.com> wrote:"
   let rest = line.replace(/^On\s+/, '').replace(/\s*wrote:\s*$/, '');
@@ -982,7 +1005,7 @@ app.post('/api/process-email', async (req, res) => {
 
     // Only the new message is "the email"; the quoted history rides along as context.
     const split = splitQuoted(rawBody);
-    const body = split.newText || String(rawBody).trim();
+    const body = stripSignatures(split.newText) || stripSignatures(rawBody) || String(rawBody).trim();
     let history = split.history ? split.history.slice(0, 4000) : '';
 
     // A caller that already has the whole Gmail thread (the backfill, or the
@@ -993,9 +1016,15 @@ app.post('/api/process-email', async (req, res) => {
       threadMsgs = req.body.thread
         .map((m) => ({
           name: String(m.name || ''), email: String(m.email || '').toLowerCase(), date: String(m.date || ''),
-          text: String(m.text || '').trim(), mine: Boolean(m.mine),
+          text: stripSignatures(m.text), mine: Boolean(m.mine),
+          attachments: Array.isArray(m.attachments)
+            ? m.attachments.slice(0, 10).map((a) => ({
+                filename: String(a.filename || ''), mimeType: String(a.mimeType || ''),
+                size: Number(a.size) || 0, attachmentId: String(a.attachmentId || ''), messageId: String(a.messageId || ''),
+              }))
+            : [],
         }))
-        .filter((m) => m.text);
+        .filter((m) => m.text || m.attachments.length);
       history = threadMsgs
         .map((m) => `${m.mine ? 'CRIB ESSENTIALS' : (m.name || m.email || 'CUSTOMER')} (${m.date}):\n${m.text}`)
         .join('\n\n---\n\n')
@@ -1425,7 +1454,7 @@ app.get('/api/health', async (req, res) => {
   }
   res.json({
     status: 'ok',
-    version: 'v12.8 - full thread import + replace-by-thread for backfill, greet by the name they wrote with, ship dates in order block',
+    version: 'v12.9 - strips "Sent from my iPhone" and store signatures, keeps attachment pointers on thread messages',
     storage: dbReady ? 'mongodb (persistent)' : 'in-memory (resets on restart)',
     dbError: dbError || null,
     leadsStored: leadCount,
