@@ -884,7 +884,7 @@ function stripSignatures(text) {
   let prev;
   do {
     prev = t;
-    t = t.replace(/[\s ]*sent from my \w+[^\n]*$/i, '').trimEnd();
+    t = t.replace(/[\s ]*sent from my \w+[^\n]*$/i, '').trimEnd();
   } while (t !== prev);
   t = t.replace(/(\n\s*)*(crib essentials|@1cribessentials)\s*$/i, '');
   t = t.replace(/(\n\s*)*(crib essentials|@1cribessentials)\s*$/i, '');
