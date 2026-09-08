@@ -612,7 +612,7 @@ const ORDER_QUERY = `
               }
             }
           }
-          fulfillments(first: 5) { trackingInfo { number url company } }
+          fulfillments(first: 5) { createdAt trackingInfo { number url company } }
           shippingAddress { city provinceCode countryCode }
         }
       }
@@ -637,6 +637,7 @@ async function getShopifyOrder(orderNumber) {
           trackingUrl: t.url || 'N/A',
           company: t.company || '',
           status: 'shipped',
+          shippedAt: f.createdAt ? String(f.createdAt).slice(0, 10) : null,
         });
       });
     });
@@ -768,7 +769,7 @@ function parseHeader(line) {
     rest = rest.replace(em[0], '').trim();
   }
   // Date runs up to the time (or the year if there is no time); name is the rest.
-  const dm = rest.match(/^(.*?\d{1,2}:\d{2}\s?(?:AM|PM)?)\s+(.+)$/i) || rest.match(/^(.*?\d{4})\s+(.+)$/);
+  const dm = rest.match(/^(.*?\d{1,2}:\d{2}\s?(?:AM|PM)?),?\s+(.+)$/i) || rest.match(/^(.*?\d{4}),?\s+(.+)$/);
   const date = dm ? dm[1].trim() : rest;
   const name = dm ? dm[2].trim() : '';
   return { date, name, email };
@@ -823,7 +824,7 @@ ORDER NUMBER CHECK: the customer quoted order ${extra.orderMismatch}, but that o
     orderBlock = `
 CUSTOMER ORDER (live from Shopify):
 Order: ${shopifyData.orderName || shopifyData.orderNumber}
-Placed: ${shopifyData.createdAt}${age !== null ? ` (${age} days ago)` : ''}
+Placed: ${String(shopifyData.createdAt).slice(0, 10)}${age !== null ? ` (${age} days ago)` : ''} - this is the date the ORDER was placed, NOT the date it shipped. Never call this the ship date.
 Payment status: ${shopifyData.status}
 Fulfillment status: ${shopifyData.fulfillmentStatus || 'unfulfilled'}
 Items on this order (the order cannot ship before its slowest item - each item's production time is on its product page below):
@@ -831,7 +832,7 @@ ${shopifyData.products.map((p) => `  - ${p.name} (qty ${p.quantity})${p.freeGift
 Tracking: ${
       shopifyData.trackingInfo.length
         ? shopifyData.trackingInfo
-            .map((t) => `${t.trackingNumber} (${t.status}) ${t.trackingUrl}`)
+            .map((t) => `${t.company ? t.company + ' ' : ''}${t.trackingNumber}${t.shippedAt ? ` - shipped on ${t.shippedAt}` : ''} ${t.trackingUrl}`)
             .join('; ')
         : 'not shipped yet - no tracking'
     }
@@ -844,6 +845,7 @@ TODAY'S DATE: ${today}
 
 EMAIL SUBJECT LINE: "${extra.subject || ''}"
 (An order number in the subject line counts exactly like one in the body - e.g. "Re: Order #2715 confirmed" means they are asking about order 2715.)
+${extra.customerName ? `THE CUSTOMER WROTE AS: "${extra.customerName}". If you greet them by name, use the first name from THIS, not the name on the Shopify account (the account can be under a partner's or parent's name). If it looks like a nickname or handle rather than a name, skip the greeting name entirely.` : ''}
 
 CUSTOMER'S NEW MESSAGE (this is what you are replying to - answer THIS):
 "${email}"
@@ -975,13 +977,30 @@ Respond with ONLY this JSON, no markdown:
 
 app.post('/api/process-email', async (req, res) => {
   try {
-    const { from, customerName, body: rawBody, subject, threadId, faqContext } = req.body;
+    const { from, customerName, body: rawBody, subject, threadId, faqContext, quiet, replace } = req.body;
     if (!rawBody) return res.status(400).json({ error: 'Missing body in request' });
 
     // Only the new message is "the email"; the quoted history rides along as context.
     const split = splitQuoted(rawBody);
     const body = split.newText || String(rawBody).trim();
-    const history = split.history ? split.history.slice(0, 4000) : '';
+    let history = split.history ? split.history.slice(0, 4000) : '';
+
+    // A caller that already has the whole Gmail thread (the backfill, or the
+    // Zap once it fetches threads) can pass it as `thread`: newest first, each
+    // { name, email, date, text, mine }. It replaces the quoted-text parse.
+    let threadMsgs = split.thread;
+    if (Array.isArray(req.body.thread) && req.body.thread.length) {
+      threadMsgs = req.body.thread
+        .map((m) => ({
+          name: String(m.name || ''), email: String(m.email || '').toLowerCase(), date: String(m.date || ''),
+          text: String(m.text || '').trim(), mine: Boolean(m.mine),
+        }))
+        .filter((m) => m.text);
+      history = threadMsgs
+        .map((m) => `${m.mine ? 'CRIB ESSENTIALS' : (m.name || m.email || 'CUSTOMER')} (${m.date}):\n${m.text}`)
+        .join('\n\n---\n\n')
+        .slice(0, 6000);
+    }
 
     const faq = faqContext && String(faqContext).trim() ? faqContext : getFaq();
 
@@ -990,7 +1009,7 @@ app.post('/api/process-email', async (req, res) => {
     const customerBlock = formatCustomer(customer);
 
     // Pass 1: understand the email and pull out the order number / product hints.
-    const initial = await askClaude(body, faq, null, '', customerBlock, { subject, history });
+    const initial = await askClaude(body, faq, null, '', customerBlock, { subject, history, customerName });
 
     let shopifyData = null;
     let orderMismatch = null;
@@ -1031,7 +1050,7 @@ app.post('/api/process-email', async (req, res) => {
     // Pass 2: answer again, now with the real order and product data in hand.
     const needsSecondPass = Boolean(shopifyData) || products.length > 0;
     const final = needsSecondPass || orderMismatch
-      ? await askClaude(body, faq, shopifyData, formatProducts(products), customerBlock, { subject, orderMismatch, history })
+      ? await askClaude(body, faq, shopifyData, formatProducts(products), customerBlock, { subject, orderMismatch, history, customerName })
       : initial;
 
     const needsHuman = Boolean(final.needsHuman) || Boolean(orderMismatch);
@@ -1042,7 +1061,7 @@ app.post('/api/process-email', async (req, res) => {
     // Three tones of the same vetted reply for the dashboard picker.
     const drafts = await makeDraftVariants(final.response, body);
 
-    const saved = await saveLead({
+    const leadDoc = {
       email: from,
       customerName,
       question: body,
@@ -1063,7 +1082,7 @@ app.post('/api/process-email', async (req, res) => {
       flagReason: flagReason,
       drafts: drafts,
       rawBody: String(rawBody),
-      thread: split.thread,
+      thread: threadMsgs,
       customerProfile: customer
         ? {
             id: customer.id, name: customer.name, firstName: customer.firstName, lastName: customer.lastName,
@@ -1074,8 +1093,28 @@ app.post('/api/process-email', async (req, res) => {
         : null,
       cart: cart,
       createdAt: new Date(),
-    });
+    };
 
+    // Re-processing the same thread (backfill re-runs) replaces the unsent
+    // draft instead of stacking a duplicate conversation in the inbox.
+    let saved = null;
+    if (replace && threadId && dbReady && Lead && !isTestSender(from)) {
+      try {
+        const existing = await Lead.findOne({ threadId, status: { $ne: 'sent' } }).sort({ createdAt: -1 });
+        if (existing) {
+          delete leadDoc.createdAt;
+          await Lead.findByIdAndUpdate(existing._id, leadDoc);
+          saved = await Lead.findById(existing._id).lean();
+        }
+      } catch (err) {
+        console.error('Replace-by-thread failed, saving fresh:', err.message);
+      }
+    }
+    if (!saved) saved = await saveLead(leadDoc);
+
+    if (quiet) {
+      return res.json({ success: true, id: saved._id, needsHuman, flagReason, replaced: Boolean(replace && saved && saved.createdAt && leadDoc.createdAt === undefined), reply: final.response });
+    }
     res.json({ success: true, lead: saved, response: final.response, drafts: drafts });
   } catch (error) {
     console.error('Error processing email:', error);
@@ -1386,7 +1425,7 @@ app.get('/api/health', async (req, res) => {
   }
   res.json({
     status: 'ok',
-    version: 'v12.7 - test leads purged and never saved, tone options on demand for older leads, FAQ from repo file, never names staff',
+    version: 'v12.8 - full thread import + replace-by-thread for backfill, greet by the name they wrote with, ship dates in order block',
     storage: dbReady ? 'mongodb (persistent)' : 'in-memory (resets on restart)',
     dbError: dbError || null,
     leadsStored: leadCount,
