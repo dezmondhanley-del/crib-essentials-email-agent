@@ -39,6 +39,8 @@ const leadSchema = new mongoose.Schema(
     aiResponse: String,
     threadId: String,
     subject: String,
+    // When the customer sent the email (createdAt is when the bot processed it).
+    receivedAt: Date,
     status: { type: String, default: 'drafted' },
     needsHuman: { type: Boolean, default: false },
     flagReason: String,
@@ -1134,6 +1136,10 @@ Respond with ONLY this JSON, no markdown:
 app.post('/api/process-email', async (req, res) => {
   try {
     const { from, customerName, body: rawBody, subject, threadId, faqContext, quiet, replace } = req.body;
+    // When the customer actually sent it (Gmail's Date header, passed by the
+    // workflow). Falls back to now for anything that arrives without it.
+    const receivedRaw = req.body.receivedAt ? new Date(req.body.receivedAt) : null;
+    const receivedAt = receivedRaw && !isNaN(receivedRaw.getTime()) ? receivedRaw : new Date();
     if (!rawBody) return res.status(400).json({ error: 'Missing body in request' });
 
     // Only the new message is "the email"; the quoted history rides along as context.
@@ -1235,6 +1241,7 @@ app.post('/api/process-email', async (req, res) => {
       aiResponse: final.response,
       threadId: threadId || null,
       subject: subject || null,
+      receivedAt,
       status: 'drafted',
       needsHuman: needsHuman,
       flagReason: flagReason,
@@ -1896,6 +1903,7 @@ app.get('/api/import-status', async (req, res) => {
         drafts: Array.isArray(l.drafts) ? l.drafts.length : 0,
         hasProfile: Boolean(l.customerProfile),
         summaryLen: String(l.aiAnalysis || '').length,
+        receivedAt: l.receivedAt || null,
         replyLen: String(l.aiResponse || '').length,
         createdAt: l.createdAt,
       })),
@@ -1917,7 +1925,7 @@ app.get('/api/health', async (req, res) => {
   }
   res.json({
     status: 'ok',
-    version: 'v13.5 - reminders tab',
+    version: 'v13.6 - real sent dates on every message',
     storage: dbReady ? 'mongodb (persistent)' : 'in-memory (resets on restart)',
     dbError: dbError || null,
     leadsStored: leadCount,
