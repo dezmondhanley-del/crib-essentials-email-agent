@@ -980,11 +980,12 @@ Set needsHuman to true whenever the STORE POLICIES say to flag the email for Dez
 //     "on their way" for an unmade piece, invented refund timing - and make
 //     sure a human reads that reply before it goes anywhere.
 const GUESS_PATTERNS = [
-  [/\b(any day now|arriving (soon|shortly|any day)|should (arrive|be there|be arriving|see it) (soon|shortly|any day)|you should see it|just around the corner|won'?t be long now)\b/i, 'guesses at an arrival date'],
-  [/\b(on (its|their|the) way|still coming|in transit|heading (to|your way)|will follow shortly)\b/i, 'says something is "on the way" - confirm it has actually shipped'],
+  [/\b(any day now|arriv(e|es|ing) (soon|shortly|any day|before long)|should (arrive|be there|be arriving|be with you|land|show up|be delivered)|(should|will|'ll|gonna|going to) (see|get|have|receive) (it|them|those|that|yours?|your \w+( \w+)?) (soon|shortly|any day|before long|in no time)|just around the corner|won'?t be (much )?long|(be|get) there (soon|shortly)|coming (very )?soon|soon enough|in no time)\b/i, 'guesses at an arrival date'],
+  [/\b(on (its|their|the) way|still coming|in transit|heading (to|your way)|will follow shortly|will arrive on (its|their) own)\b/i, 'says something is "on the way" - confirm it has actually shipped'],
+  [/\b(process(ing|ed)?|issu(e|ed|ing)|approv(e|ed|ing)|send(ing)?|sent|initiat(e|ed|ing)|start(ed|ing)?) (the|your|a|this) (full |partial )?refund\b|\brefund (is|has been|will be|was) (processed|issued|approved|on its way|sent|coming)|\brefund(ed|ing) (you|it|your)\b/i, 'promises a refund - only Dezmond decides that'],
   [/\b(refund|money|funds|credit)\b[^.]{0,80}\b\d+\s*(-|to)\s*\d+\s*(business\s+)?days\b/i, 'states a refund timeline'],
   [/\b\d+\s*(-|to)\s*\d+\s*(business\s+)?days\b[^.]{0,80}\b(refund|back on your card|returned to)\b/i, 'states a refund timeline'],
-  [/\$\s?\d/, 'quotes a dollar amount'],
+  [/\b(you('?re| are) all set|all taken care of|(has|have) been (updated|changed|cancell?ed|removed|swapped)|is (now )?(updated|changed|cancell?ed)|(updated|changed|cancell?ed) (it|that|your (order|address)) for you|don'?t worry|no need to worry|nothing to worry about)\b/i, 'says a change is already done or promises the outcome'],
   [/\bdezmond\b/i, 'names a staff member'],
 ];
 
@@ -1760,7 +1761,7 @@ app.get('/api/health', async (req, res) => {
   }
   res.json({
     status: 'ok',
-    version: 'v13.2 - sign-off guaranteed, guessy replies get flagged for review',
+    version: 'v13.3 - tighter guess catcher (refund promises, all set, see them soon)',
     storage: dbReady ? 'mongodb (persistent)' : 'in-memory (resets on restart)',
     dbError: dbError || null,
     leadsStored: leadCount,
