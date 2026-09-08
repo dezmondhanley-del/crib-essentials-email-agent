@@ -5,6 +5,8 @@ const Anthropic = require('@anthropic-ai/sdk');
 require('dotenv').config();
 
 const app = express();
+// Render sits behind a proxy; this makes req.protocol say https for signed links.
+app.set('trust proxy', 1);
 app.use(cors());
 // Customer photos arrive base64-encoded from the Gmail import, so the body
 // limit is well above Express's 100kb default.
@@ -66,6 +68,8 @@ const leadSchema = new mongoose.Schema(
     attachments: [Object],
     sentAt: Date,
     sentBody: String,
+    // Photos Dezmond attached to his reply (stored like incoming ones, under messageId "out-<leadId>").
+    sentAttachments: [Object],
     createdAt: { type: Date, default: Date.now },
   },
   { versionKey: false }
@@ -516,6 +520,8 @@ const CUSTOMER_QUERY = `
                 shippingAddress { address1 address2 city provinceCode zip countryCode firstName lastName phone }
                 displayFinancialStatus
                 displayFulfillmentStatus
+                tags
+                note
                 totalPriceSet { shopMoney { amount } }
                 lineItems(first: 10) { edges { node { title variantTitle quantity unfulfilledQuantity product { id } } } }
                 fulfillments(first: 5) {
@@ -578,6 +584,8 @@ async function getCustomerContext(email) {
           createdAt: o.createdAt,
           financial: o.displayFinancialStatus,
           fulfillment: o.displayFulfillmentStatus,
+          tags: o.tags || [],
+          note: o.note || null,
           total: o.totalPriceSet && o.totalPriceSet.shopMoney ? o.totalPriceSet.shopMoney.amount : null,
           items: (o.lineItems.edges || []).map((le) => ({
             title: le.node.title,
@@ -653,6 +661,16 @@ async function getOpenCart(email) {
   }
 }
 
+// Tags and the order note are where Dezmond records what Shopify cannot know:
+// "in production", "ready to ship", "ships week of Sep 15". When present they
+// are real information the bot may use word for word.
+function teamNotes(o) {
+  const bits = [];
+  if (o && Array.isArray(o.tags) && o.tags.length) bits.push(`tags: ${o.tags.join(', ')}`);
+  if (o && o.note && String(o.note).trim()) bits.push(`note: ${String(o.note).trim().slice(0, 400)}`);
+  return bits.length ? `  Team notes on this order (written by us - trust these): ${bits.join(' | ')}` : '';
+}
+
 function formatCustomer(cust) {
   if (!cust) return '';
   const lines = cust.orders.map((o) => {
@@ -666,6 +684,8 @@ function formatCustomer(cust) {
         ? `  Tracking: ${o.tracking.map((t) => `${t.company || ''} ${t.number} ${t.url || ''}`.trim()).join('; ')}`
         : '  Tracking: none yet - this order has not shipped'
     );
+    const tn = teamNotes(o);
+    if (tn) parts.push(tn);
     return parts.join('\n');
   });
 
@@ -688,6 +708,8 @@ const ORDER_QUERY = `
           createdAt
           displayFinancialStatus
           displayFulfillmentStatus
+          tags
+          note
           totalPriceSet { shopMoney { amount } }
           lineItems(first: 20) {
             edges {
@@ -737,6 +759,8 @@ async function getShopifyOrder(orderNumber) {
       email: String(o.email || '').toLowerCase(),
       status: o.displayFinancialStatus,
       fulfillmentStatus: o.displayFulfillmentStatus,
+      tags: o.tags || [],
+      note: o.note || null,
       createdAt: o.createdAt,
       total: o.totalPriceSet && o.totalPriceSet.shopMoney ? o.totalPriceSet.shopMoney.amount : null,
       products: (o.lineItems.edges || []).map((le) => {
@@ -860,7 +884,7 @@ function stripSignatures(text) {
   let prev;
   do {
     prev = t;
-    t = t.replace(/[\s ]*sent from my \w+[^\n]*$/i, '').trimEnd();
+    t = t.replace(/[\s ]*sent from my \w+[^\n]*$/i, '').trimEnd();
   } while (t !== prev);
   t = t.replace(/(\n\s*)*(crib essentials|@1cribessentials)\s*$/i, '');
   t = t.replace(/(\n\s*)*(crib essentials|@1cribessentials)\s*$/i, '');
@@ -928,16 +952,16 @@ function parseHistory(historyLines) {
 }
 
 
-async function askClaude(email, faqContext, shopifyData, productBlock, customerBlock, extra) {
-  extra = extra || {};
-  const today = new Date().toISOString().slice(0, 10);
+// The order section of the prompt, shared by the main reply and the answer
+// options so both see exactly the same facts.
+function buildOrderBlock(shopifyData, orderMismatch) {
   let orderBlock = '';
-  if (extra.orderMismatch) {
+  if (orderMismatch) {
     orderBlock = `
-ORDER NUMBER CHECK: the customer quoted order ${extra.orderMismatch}, but that order is not under the email address they wrote from. Do NOT reveal anything about that order - no status, no items, no tracking. Say you are pulling up order ${extra.orderMismatch} and will come right back, and set needsHuman to true so Dezmond can verify it is theirs.
+ORDER NUMBER CHECK: the customer quoted order ${orderMismatch}, but that order is not under the email address they wrote from. Do NOT reveal anything about that order - no status, no items, no tracking. Say you are pulling up order ${orderMismatch} and will come right back, and set needsHuman to true so Dezmond can verify it is theirs.
 `;
   }
-  if (shopifyData && !extra.orderMismatch) {
+  if (shopifyData && !orderMismatch) {
     const age = daysSince(shopifyData.createdAt);
     orderBlock = `
 CUSTOMER ORDER (live from Shopify):
@@ -954,9 +978,16 @@ Tracking: ${
             .join('; ')
         : 'not shipped yet - no tracking'
     }
-`;
+${teamNotes(shopifyData) ? teamNotes(shopifyData).trim() + '\n' : ''}`;
   }
 
+  return orderBlock;
+}
+
+async function askClaude(email, faqContext, shopifyData, productBlock, customerBlock, extra) {
+  extra = extra || {};
+  const today = new Date().toISOString().slice(0, 10);
+  const orderBlock = buildOrderBlock(shopifyData, extra.orderMismatch);
   const prompt = `You are a customer support agent for Crib Essentials, a handmade home decor brand in Dallas, TX selling wall art, mirrors, rugs, pillows and decorative pieces.
 
 TODAY'S DATE: ${today}
@@ -1087,31 +1118,46 @@ function polishReply(parsed, ctx) {
 // rewrite only: the model may rephrase, expand or tighten, but it is told it
 // may not add a single fact, number, promise or policy that is not already in
 // the original. The original is always drafts[0] so there is a safe fallback.
-async function makeDraftVariants(original, customerEmail) {
-  const base = [{ tone: 'short', label: 'Short & warm', text: original }];
+async function makeDraftVariants(original, customerEmail, context) {
+  const base = [{ tone: 'short', label: context ? 'Straight answer' : 'Short & warm', text: original }];
   if (!original || !String(original).trim()) return base;
 
-  const prompt = `You are rewriting a customer support reply for Crib Essentials, a small handmade home decor brand in Dallas. Below is the APPROVED reply. Produce two rewrites of it in different tones.
-
-STRICT RULES:
+  const rewriteRules = `STRICT RULES:
 - Rewrite only. Every rewrite must say the same things as the approved reply - same facts, same numbers, same dates, same requests (for an order number, for photos, etc.), same "I'll check and come back" promises.
 - Do NOT add any fact, number, timeline, price, policy, product name, apology for something not mentioned, or promise that is not in the approved reply. Do not remove a request the approved reply makes.
-- Do NOT do arithmetic on the approved reply's numbers: never add production and delivery times together, never convert business days into weeks, never say "roughly", "about", "in total", "all in", or "from order to arrival" with a new figure. Quote each number exactly as the approved reply states it, once.
-- Do NOT add reassurance the approved reply does not contain ("worth the wait", "you'll love it", "don't worry", "rest assured").
-- Do not say "I'm a real person", do not mention AI, never name any staff member (no "Dezmond"), and never use internal language ("the system", "our records", "flagging", "escalating").
-- Write in the same language the approved reply is written in.
-- Use the customer's name only if the approved reply uses it.
-- Each rewrite must end with "- Crib Essentials" on its own line, with a blank line before it. Nothing after it.
+- Do NOT do arithmetic on the approved reply's numbers: never add production and delivery times together, never convert business days into weeks, never say "roughly", "about", "in total", "all in", or "from order to arrival" with a new figure. Quote each number exactly as the approved reply states it, once.`;
 
-TONES:
+  const answerRules = `STRICT RULES:
+- These are two ALTERNATIVE ANSWERS to the customer, not rewrites. Each one must actually answer what they asked, using ONLY facts that appear in the approved reply, the order and customer data, or the store policies below. Every number, date, tracking number, product name and policy you use must be copied from there. Nothing from memory, nothing assumed.
+- If the approved reply says it is checking on something and will come back, that means the information does not exist - do NOT fill the gap with a guess. Keep that promise in your version, but you may add true, useful context around it (what the order contains, what has and has not shipped, the normal production window from the policies, what happens next).
+- Never guess when a parcel will arrive, never say an unshipped item is on the way, never state a refund timeline or say a refund is happening, never say "you're all set" or that a change has been made. Never mention manufacturers, suppliers, batches, or anything internal.
+- Do NOT do arithmetic on timelines: never add production and delivery together, never convert business days into weeks. Quote each window exactly as the policies state it.`;
+
+  const prompt = `You are ${context ? 'writing customer support replies' : 'rewriting a customer support reply'} for Crib Essentials, a small handmade home decor brand in Dallas. ${context ? 'Below is the customer\'s email, everything we know (live order data, customer record, product details, store policies), and one APPROVED reply. Produce two more replies that answer the customer in different ways.' : 'Below is the APPROVED reply. Produce two rewrites of it in different tones.'}
+
+${context ? answerRules : rewriteRules}
+- Do NOT add reassurance that is not supported ("worth the wait", "you'll love it", "don't worry", "rest assured").
+- Do not say "I'm a real person", do not mention AI, never name any staff member (no "Dezmond"), and never use internal language ("the system", "our records", "flagging", "escalating", "order data").
+- Write in the same language the customer wrote in.
+- Use the customer's first name only if the approved reply uses it.
+- Each reply must end with "- Crib Essentials" on its own line, with a blank line before it. Nothing after it.
+
+${context ? `VERSIONS:
+1. "detailed": the complete answer - answer every question, then spell out exactly what happens next for THIS order using the data (which items have shipped with which tracking, which are still being made and their production window from the policies, what they should expect to see and when tracking will show). Warm, plain, 4-8 sentences. No filler.
+2. "formal": short and warm - lead with a real acknowledgement of their situation (how long they have waited, what went wrong), give the answer in one or two sentences, and one clear next step. 2-4 sentences.` : `TONES:
 1. "detailed": a little longer and more thorough - explain the why behind each point in a friendly way, still human and warm, 4-7 sentences. No new facts, just fuller sentences.
-2. "formal": polished and professional, apologetic where the approved reply apologizes, no slang, no exclamation marks, 3-6 sentences.
+2. "formal": polished and professional, apologetic where the approved reply apologizes, no slang, no exclamation marks, 3-6 sentences.`}
 
-CUSTOMER'S EMAIL (for context only - do not answer anything the approved reply does not answer):
+CUSTOMER'S EMAIL${context ? '' : ' (for context only - do not answer anything the approved reply does not answer)'}:
 """
 ${customerEmail}
 """
-
+${context ? `
+EVERYTHING WE KNOW (the only allowed source of facts):
+"""
+${context}
+"""
+` : ''}
 APPROVED REPLY:
 """
 ${original}
@@ -1123,19 +1169,24 @@ Respond with ONLY this JSON, no markdown:
   try {
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-5',
-      max_tokens: 1200,
+      max_tokens: 1400,
       messages: [{ role: 'user', content: prompt }],
     });
     let text = message.content[0].text.trim();
     text = text.replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim();
     const parsed = JSON.parse(text);
     const out = base.slice();
-    if (parsed.detailed && String(parsed.detailed).trim()) {
-      out.push({ tone: 'detailed', label: 'Detailed', text: String(parsed.detailed).trim() });
-    }
-    if (parsed.formal && String(parsed.formal).trim()) {
-      out.push({ tone: 'formal', label: 'Formal', text: String(parsed.formal).trim() });
-    }
+    const unshipped = context ? /not shipped|unfulfilled|partially/i.test(context) : true;
+    const clean = (txt) => {
+      // Same safety net as the main reply: sign-off guaranteed, and a version
+      // that slips in a guess is dropped rather than offered.
+      const p = polishReply({ response: String(txt || '').trim(), needsHuman: false }, { unshipped });
+      return p.needsHuman ? null : p.response;
+    };
+    const detailed = clean(parsed.detailed);
+    const formal = clean(parsed.formal);
+    if (detailed) out.push({ tone: 'detailed', label: context ? 'Answer + what happens next' : 'Detailed', text: detailed });
+    if (formal) out.push({ tone: 'formal', label: context ? 'Short & warm' : 'Formal', text: formal });
     return out;
   } catch (err) {
     console.error('Draft variants failed, keeping the single draft:', err.message);
@@ -1232,8 +1283,10 @@ app.post('/api/process-email', async (req, res) => {
       ? `Customer quoted order ${orderMismatch} but it is not under their email - verify before sharing anything`
       : (final.flagReason || null);
 
-    // Three tones of the same vetted reply for the dashboard picker.
-    const drafts = await makeDraftVariants(final.response, body);
+    // Three real answers for the dashboard picker, each built from the same
+    // live data the main reply saw.
+    const answerContext = [customerBlock || '', buildOrderBlock(shopifyData, orderMismatch), formatProducts(products) || '', 'STORE POLICIES:\n' + faq].filter((x) => x && x.trim()).join('\n');
+    const drafts = await makeDraftVariants(final.response, body, answerContext);
 
     const leadDoc = {
       email: from,
@@ -1393,6 +1446,30 @@ app.post('/api/leads/:id/send', async (req, res) => {
       return res.status(400).json({ error: 'This lead has no Gmail thread id, so it cannot be replied to in thread.' });
     }
 
+    // Photos to send along. They are stored here and handed to Gmail as
+    // signed links (Zapier fetches them - no dashboard token in the URL).
+    const incoming = Array.isArray(req.body.attachments) ? req.body.attachments.slice(0, 4) : [];
+    const outMessageId = `out-${req.params.id}`;
+    const stored = [];
+    if (incoming.length) {
+      for (let i = 0; i < incoming.length; i++) {
+        const a = incoming[i] || {};
+        const mime = String(a.mimeType || '');
+        if (!/^image\//i.test(mime)) return res.status(400).json({ error: 'Only images can be attached.' });
+        const buf = Buffer.from(String(a.data || '').replace(/^data:[^,]*,/, ''), 'base64');
+        if (!buf.length) return res.status(400).json({ error: 'One of the photos was empty.' });
+        if (buf.length > 6 * 1024 * 1024) return res.status(413).json({ error: 'A photo is too big (max 6MB).' });
+        const filename = String(a.filename || `photo-${i + 1}.jpg`).replace(/[^\w.\- ]+/g, '_').slice(0, 80);
+        const attachmentId = String(Date.now()) + '-' + i;
+        const rec = { threadId: lead.threadId, messageId: outMessageId, attachmentId, filename, mimeType: mime, size: buf.length, data: buf };
+        if (dbReady && Attachment) await Attachment.create(rec);
+        else memoryOut.set(`${outMessageId}/${attachmentId}`, rec);
+        stored.push({ messageId: outMessageId, attachmentId, filename, mimeType: mime, size: buf.length });
+      }
+    }
+    const base = `${req.protocol}://${req.get('host')}`;
+    const fileUrls = stored.map((a) => `${base}/api/out/${encodeURIComponent(a.messageId)}/${encodeURIComponent(a.attachmentId)}?sig=${outSig(a.messageId, a.attachmentId)}`);
+
     const hook = await fetch(SEND_WEBHOOK_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1401,6 +1478,7 @@ app.post('/api/leads/:id/send', async (req, res) => {
         to: lead.email,
         subject: lead.subject ? `Re: ${lead.subject}` : undefined,
         body: bodyText,
+        attachments: fileUrls,
       }),
     });
 
@@ -1415,6 +1493,7 @@ app.post('/api/leads/:id/send', async (req, res) => {
         status: 'sent',
         sentAt: sentAt,
         sentBody: bodyText,
+        sentAttachments: stored,
       });
     } else {
       const m = memoryLeads.find((l) => l._id === req.params.id);
@@ -1422,10 +1501,11 @@ app.post('/api/leads/:id/send', async (req, res) => {
         m.status = 'sent';
         m.sentAt = sentAt;
         m.sentBody = bodyText;
+        m.sentAttachments = stored;
       }
     }
 
-    res.json({ sent: true, sentAt });
+    res.json({ sent: true, sentAt, attachments: stored.length });
   } catch (err) {
     console.error('Send failed:', err);
     res.status(500).json({ error: err.message });
@@ -1766,12 +1846,42 @@ app.post('/api/attachments', async (req, res) => {
 app.get('/api/att/:messageId/:attachmentId', async (req, res) => {
   if (!readGate(req, res)) return;
   try {
-    if (!(dbReady && Attachment)) return res.status(503).json({ error: 'Database not ready' });
-    const a = await Attachment.findOne({ messageId: req.params.messageId, attachmentId: req.params.attachmentId }).lean();
+    const a = await findStoredAttachment(req.params.messageId, req.params.attachmentId);
     if (!a || !a.data) return res.status(404).json({ error: 'Not stored' });
     res.set('Content-Type', a.mimeType || 'application/octet-stream');
     res.set('Content-Disposition', `inline; filename="${String(a.filename || 'file').replace(/"/g, '')}"`);
     res.set('Cache-Control', 'private, max-age=86400');
+    res.send(Buffer.isBuffer(a.data) ? a.data : Buffer.from(a.data.buffer || a.data));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Outgoing photos are fetched by Zapier/Gmail without a dashboard token, so the
+// link carries a signature instead: unguessable, and useless for anything else.
+const crypto = require('crypto');
+// Outgoing photos when there is no database (local testing only).
+const memoryOut = new Map();
+async function findStoredAttachment(messageId, attachmentId) {
+  const mem = memoryOut.get(`${messageId}/${attachmentId}`);
+  if (mem) return mem;
+  if (!(dbReady && Attachment)) return null;
+  return Attachment.findOne({ messageId, attachmentId }).lean();
+}
+function outSig(messageId, attachmentId) {
+  return crypto.createHmac('sha256', String(DASHBOARD_TOKEN || 'no-token')).update(`${messageId}/${attachmentId}`).digest('hex');
+}
+app.get('/api/out/:messageId/:attachmentId', async (req, res) => {
+  try {
+    const want = outSig(req.params.messageId, req.params.attachmentId);
+    const got = String(req.query.sig || '');
+    if (!/^out-/.test(req.params.messageId) || got.length !== want.length || !crypto.timingSafeEqual(Buffer.from(got), Buffer.from(want))) {
+      return res.status(403).json({ error: 'Bad signature' });
+    }
+    const a = await findStoredAttachment(req.params.messageId, req.params.attachmentId);
+    if (!a || !a.data) return res.status(404).json({ error: 'Not stored' });
+    res.set('Content-Type', a.mimeType || 'application/octet-stream');
+    res.set('Content-Disposition', `attachment; filename="${String(a.filename || 'photo.jpg').replace(/"/g, '')}"`);
     res.send(Buffer.isBuffer(a.data) ? a.data : Buffer.from(a.data.buffer || a.data));
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1956,7 +2066,7 @@ app.get('/api/health', async (req, res) => {
   }
   res.json({
     status: 'ok',
-    version: 'v13.7 - re-imports never reopen a conversation you already answered',
+    version: 'v14.0 - three real answers, order tags/notes, photo replies',
     storage: dbReady ? 'mongodb (persistent)' : 'in-memory (resets on restart)',
     dbError: dbError || null,
     leadsStored: leadCount,
