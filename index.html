@@ -211,6 +211,11 @@
   .attach{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--muted);font:inherit;font-size:13px;cursor:pointer}
   .attach:hover{border-color:var(--teal);color:var(--teal)}
   .attach input{display:none}
+  .attach.polish{border-color:var(--plum);color:var(--plum);background:var(--plum-soft)}
+  .attach.polish:hover{background:var(--plum);color:#fff}
+  .attach:disabled{opacity:.5;cursor:default}
+  .tone.own{border-style:dashed}
+  .tone.own.on{background:var(--plum);border-color:var(--plum);border-style:solid}
   .thumbs{display:flex;gap:8px;flex-wrap:wrap;padding:8px 10px 0}
   .thumb{position:relative;width:64px;height:64px;border-radius:8px;overflow:hidden;border:1px solid var(--line)}
   .thumb img{width:100%;height:100%;object-fit:cover;display:block}
@@ -331,7 +336,7 @@ var API_URL = (/^https?:$/.test(location.protocol) && !/netlify\.app$/.test(loca
   ? location.origin : 'https://crib-essentials-email-agent.onrender.com';
 
 var leads = [], convos = [], filter = 'all', query = '', selectedKey = null, historyOpen = {}, noToken = false;
-var reminders = [], showDone = false, remindOpen = {}, sumOpen = {}, pendingPhotos = {};
+var reminders = [], showDone = false, remindOpen = {}, sumOpen = {}, pendingPhotos = {}, ownText = {};
 
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
   return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
@@ -737,7 +742,6 @@ function renderConvo(){
   var latest = c.latest;
   var profile = latest.customerProfile;
   var kind = profile ? (Number(profile.totalOrders) > 1 ? 'Returning customer' : (Number(profile.totalOrders) === 1 ? 'Customer' : 'New')) : 'Not in Shopify';
-
   var html = '<div class="chead"><button class="back" id="backBtn" title="Back to conversations">&#8249;</button><div class="' + avClass(c.email || c.key) + '">' + esc(initials(c.name, c.email)) + '</div>' +
     '<div class="who"><div class="nm">' + esc(c.name) + '</div><div class="em">' + esc(c.email) + (latest.subject ? ' · ' + esc(latest.subject) : '') + '</div></div>' +
     '<span class="badge">' + esc(c.other ? 'Not a customer' : kind) + '</span>' +
@@ -781,7 +785,8 @@ function renderConvo(){
     }
     if(drafts.length > 1){
       html += '<div class="tones" id="tones">' + drafts.map(function(d, i){
-        return '<button class="tone' + (i === 0 ? ' on' : '') + '" data-i="' + i + '">' + esc(d.label) + '</button>'; }).join('') + '</div>';
+        return '<button class="tone' + (i === 0 ? ' on' : '') + '" data-i="' + i + '">' + esc(d.label) + '</button>'; }).join('') +
+        '<button class="tone own" data-i="own" title="Type the answer yourself, then tap Polish">&#9998; Your answer</button></div>';
     } else if(latest.aiResponse){
       // Saved before tone options existed - ask the server to write the other two.
       html += '<div class="tones"><span class="tone on">Short &amp; warm</span><span class="tone" style="border-style:dashed">' +
@@ -791,7 +796,9 @@ function renderConvo(){
     html += '<div class="box" id="box"><textarea id="composeBox" placeholder="Write email…">' + esc(drafts[0].text) + '</textarea>' +
       '<div class="thumbs" id="thumbs"></div>' +
       '<div class="bar"><button class="btn ghost" id="resetBtn">Reset</button>' +
-      '<label class="attach" title="Attach up to 4 photos">&#128247; Photo<input type="file" id="photoInput" accept="image/*" multiple></label><span class="grow"></span>' +
+      '<label class="attach" title="Attach up to 4 photos">&#128247; Photo<input type="file" id="photoInput" accept="image/*" multiple></label>' +
+      '<button class="attach polish" id="polishBtn" type="button" title="Fix spelling and grammar and make it read professionally - keeps every fact you wrote">&#10024; Polish</button>' +
+      '<button class="attach" id="undoBtn" type="button" style="display:none" title="Put back what you had before Polish">Undo</button><span class="grow"></span>' +
       '<span class="sendmsg" id="sendMsg"></span><button class="btn" id="sendBtn">Send email</button></div></div>';
     html += '<div class="hint"><span>' + (latest.threadId
       ? 'Replies to ' + esc(c.email) + ' in the original thread from support@1cribessential.com.'
@@ -826,22 +833,64 @@ function renderConvo(){
     sendBtn.onclick = function(){ sendReply(latest, sendBtn); };
     var current = 0, box = document.getElementById('composeBox');
     var toneBtns = Array.prototype.slice.call(document.querySelectorAll('#tones .tone'));
+    var ownKey = latest._id;
+    // "own" = Dezmond's own words, kept per conversation so switching tabs does not lose them.
+    function baseText(i){ return i === 'own' ? (ownText[ownKey] || '') : drafts[i].text; }
     function pick(i){
-      current = i; box.value = drafts[i].text;
-      toneBtns.forEach(function(b, j){ b.classList.toggle('on', j === i); b.classList.remove('edited'); });
+      if(current === 'own') ownText[ownKey] = box.value;
+      current = i; box.value = baseText(i);
+      box.placeholder = i === 'own' ? 'Type the answer in your own words, then tap Polish to clean it up.' : 'Write email…';
+      toneBtns.forEach(function(b){ var v = b.getAttribute('data-i'); b.classList.toggle('on', String(v) === String(i)); b.classList.remove('edited'); });
+      if(i === 'own') box.focus();
     }
     toneBtns.forEach(function(b){
       b.onclick = function(){
-        var i = Number(b.getAttribute('data-i'));
+        var raw = b.getAttribute('data-i');
+        var i = raw === 'own' ? 'own' : Number(raw);
         if(i === current) return;
-        if(box.value !== drafts[current].text && !window.confirm('Switch tone? Your edits to this draft will be lost.')) return;
+        if(current !== 'own' && box.value !== drafts[current].text && !window.confirm('Switch draft? Your edits to this one will be lost.')) return;
         pick(i);
       };
     });
     box.addEventListener('input', function(){
-      if(toneBtns[current]) toneBtns[current].classList.toggle('edited', box.value !== drafts[current].text);
+      if(current === 'own') ownText[ownKey] = box.value;
+      var b = toneBtns.filter(function(x){ return String(x.getAttribute('data-i')) === String(current); })[0];
+      if(b && current !== 'own') b.classList.toggle('edited', box.value !== drafts[current].text);
     });
-    document.getElementById('resetBtn').onclick = function(){ pick(current); };
+    document.getElementById('resetBtn').onclick = function(){ if(current === 'own') ownText[ownKey] = ''; pick(current); };
+
+    // Polish: AI cleans up whatever is in the box - spelling, grammar, tone -
+    // and keeps every fact exactly as written. Undo puts the original back.
+    var polishBtn = document.getElementById('polishBtn'), undoBtn = document.getElementById('undoBtn');
+    var beforePolish = null;
+    polishBtn.onclick = async function(){
+      var text = box.value.trim();
+      if(!text){ msgSet('bad', 'Type something first.'); return; }
+      var token = getToken();
+      if(!token){ askToken('Enter your dashboard token to use Polish.'); return; }
+      polishBtn.disabled = true; polishBtn.innerHTML = '&#10024; Polishing…'; msgSet('', '');
+      try{
+        var r = await fetch(API_URL + '/api/leads/' + encodeURIComponent(latest._id) + '/polish', {
+          method:'POST', headers:{ 'Content-Type':'application/json', 'x-dashboard-token': token },
+          body: JSON.stringify({ text: text })
+        });
+        var d = await r.json().catch(function(){ return {}; });
+        if(!r.ok) throw new Error(d.error || ('Server returned ' + r.status));
+        beforePolish = box.value;
+        box.value = d.text;
+        if(current === 'own') ownText[ownKey] = d.text;
+        undoBtn.style.display = 'inline-flex';
+        msgSet('good', 'Polished - read it over, then send.');
+      }catch(err){
+        msgSet('bad', 'Polish failed: ' + err.message);
+      }finally{ polishBtn.disabled = false; polishBtn.innerHTML = '&#10024; Polish'; }
+    };
+    undoBtn.onclick = function(){
+      if(beforePolish === null) return;
+      box.value = beforePolish; if(current === 'own') ownText[ownKey] = beforePolish;
+      beforePolish = null; undoBtn.style.display = 'none'; msgSet('', '');
+    };
+    function msgSet(cls, text){ var m = document.getElementById('sendMsg'); if(m){ m.className = 'sendmsg' + (cls ? ' ' + cls : ''); m.textContent = text; } }
   }
 }
 
