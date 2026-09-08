@@ -1478,12 +1478,37 @@ app.get('/api/shopify-check', async (req, res) => {
 // Customer photos. The Gmail import posts each image here once; the Inbox
 // reads them back with the dashboard token (as ?token= so <img> tags work).
 // ---------------------------------------------------------------------------
+// Big photos arrive in pieces (the Zapier webhook step caps its payload), so
+// each request carries {chunkIndex, chunkCount} and the pieces are held here
+// until the last one lands. Partial uploads are dropped after 10 minutes.
+const pendingChunks = new Map();
+function pendingKey(messageId, attachmentId) { return `${messageId}/${attachmentId}`; }
+setInterval(() => {
+  const cutoff = Date.now() - 10 * 60 * 1000;
+  for (const [k, v] of pendingChunks) if (v.startedAt < cutoff) pendingChunks.delete(k);
+}, 60 * 1000).unref();
+
 app.post('/api/attachments', async (req, res) => {
   try {
-    const { threadId, messageId, attachmentId, filename, mimeType, size, data } = req.body || {};
+    const { threadId, messageId, attachmentId, filename, mimeType, data } = req.body || {};
     if (!messageId || !attachmentId || !data) return res.status(400).json({ error: 'messageId, attachmentId and data are required' });
     if (!(dbReady && Attachment)) return res.status(503).json({ error: 'Database not ready' });
-    const buf = Buffer.from(String(data).replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+
+    const chunkCount = Math.max(1, Number(req.body.chunkCount) || 1);
+    const chunkIndex = Math.max(0, Number(req.body.chunkIndex) || 0);
+    let b64 = String(data);
+    if (chunkCount > 1) {
+      const key = pendingKey(messageId, attachmentId);
+      const entry = pendingChunks.get(key) || { parts: new Array(chunkCount).fill(null), startedAt: Date.now() };
+      entry.parts[chunkIndex] = b64;
+      pendingChunks.set(key, entry);
+      const have = entry.parts.filter((p) => p !== null).length;
+      if (have < chunkCount) return res.json({ ok: true, pending: true, have, chunkCount });
+      pendingChunks.delete(key);
+      b64 = entry.parts.join('');
+    }
+
+    const buf = Buffer.from(b64.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
     if (!buf.length) return res.status(400).json({ error: 'Empty file' });
     if (buf.length > 8 * 1024 * 1024) return res.status(413).json({ error: 'File too large' });
     await Attachment.findOneAndUpdate(
@@ -1690,7 +1715,7 @@ app.get('/api/health', async (req, res) => {
   }
   res.json({
     status: 'ok',
-    version: 'v13.0 - customer photos in the Inbox, customer search by order/name, install-on-phone manifest, import status',
+    version: 'v13.1 - chunked photo upload so big pictures come through',
     storage: dbReady ? 'mongodb (persistent)' : 'in-memory (resets on restart)',
     dbError: dbError || null,
     leadsStored: leadCount,
