@@ -6,7 +6,9 @@ require('dotenv').config();
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+// Customer photos arrive base64-encoded from the Gmail import, so the body
+// limit is well above Express's 100kb default.
+app.use(express.json({ limit: '12mb' }));
 
 const anthropic = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
 
@@ -53,6 +55,8 @@ const leadSchema = new mongoose.Schema(
       // Gmail attachment pointers (filename, mimeType, size, attachmentId, messageId).
       attachments: [Object],
     }],
+    // Attachments on the newest customer message (same shape as thread[].attachments).
+    attachments: [Object],
     sentAt: Date,
     sentBody: String,
     createdAt: { type: Date, default: Date.now },
@@ -60,8 +64,27 @@ const leadSchema = new mongoose.Schema(
   { versionKey: false }
 );
 
+// Customer photos, pulled from Gmail by the import workflow and kept here so
+// the Inbox can show them without its own Gmail access. One doc per file.
+const attachmentSchema = new mongoose.Schema(
+  {
+    threadId: String,
+    messageId: String,
+    attachmentId: String,
+    filename: String,
+    mimeType: String,
+    size: Number,
+    data: Buffer,
+    createdAt: { type: Date, default: Date.now },
+  },
+  { versionKey: false }
+);
+attachmentSchema.index({ messageId: 1, attachmentId: 1 }, { unique: true });
+let Attachment = null;
+
 if (MONGODB_URI) {
   Lead = mongoose.model('Lead', leadSchema);
+  Attachment = mongoose.model('Attachment', attachmentSchema);
   mongoose
     .connect(MONGODB_URI, { serverSelectionTimeoutMS: 8000 })
     .then(() => {
@@ -782,6 +805,16 @@ function stripSignatures(text) {
   return t.replace(/\n{3,}/g, '\n\n').trim();
 }
 
+// Gmail attachment pointers as sent by the import workflow. The bytes live in
+// the Attachment collection; these are just enough to find and label them.
+function shapeAttachments(list) {
+  if (!Array.isArray(list)) return [];
+  return list.slice(0, 10).map((a) => ({
+    filename: String(a.filename || ''), mimeType: String(a.mimeType || ''),
+    size: Number(a.size) || 0, attachmentId: String(a.attachmentId || ''), messageId: String(a.messageId || ''),
+  })).filter((a) => a.attachmentId && a.messageId);
+}
+
 function parseHeader(line) {
   // "On Sat, Aug 29, 2026 at 11:01 AM Davaughn Paige <x@y.com> wrote:"
   let rest = line.replace(/^On\s+/, '').replace(/\s*wrote:\s*$/, '');
@@ -872,6 +905,7 @@ ${extra.customerName ? `THE CUSTOMER WROTE AS: "${extra.customerName}". If you g
 
 CUSTOMER'S NEW MESSAGE (this is what you are replying to - answer THIS):
 "${email}"
+${extra.attachments && extra.attachments.length ? `(They attached ${extra.attachments.length} file${extra.attachments.length === 1 ? '' : 's'}: ${extra.attachments.map((a) => a.filename).join(', ')}. You cannot see the files. If they are photos of a problem, thank them for the photos and say the team is looking at them - never describe what the photos show, and if the policies ask for photos, do not ask for them again.)` : ''}
 ${extra.history ? `
 EARLIER MESSAGES IN THIS THREAD (quoted history, oldest at the bottom). Context only. These were already dealt with - do NOT answer them again and do NOT confirm or repeat things from them. Use them only to understand what the new message refers to (which order, which address, what was already promised):
 <<<
@@ -904,7 +938,7 @@ RULES:
 Respond with ONLY raw JSON, no markdown fences:
 {
   "type": "order_inquiry" | "product_question" | "general_support",
-  "summary": "one line on what the customer needs",
+  "summary": "one or two short lines: what the whole conversation is about so far and what the customer needs from us now",
   "response": "the reply to send",
   "extractedOrderNumber": "order number if mentioned in the body OR the subject line, else null",
   "productKeywords": ["product names or types mentioned, else empty array"],
@@ -1012,17 +1046,13 @@ app.post('/api/process-email', async (req, res) => {
     // Zap once it fetches threads) can pass it as `thread`: newest first, each
     // { name, email, date, text, mine }. It replaces the quoted-text parse.
     let threadMsgs = split.thread;
+    const latestAttachments = shapeAttachments(req.body.attachments);
     if (Array.isArray(req.body.thread) && req.body.thread.length) {
       threadMsgs = req.body.thread
         .map((m) => ({
           name: String(m.name || ''), email: String(m.email || '').toLowerCase(), date: String(m.date || ''),
           text: stripSignatures(m.text), mine: Boolean(m.mine),
-          attachments: Array.isArray(m.attachments)
-            ? m.attachments.slice(0, 10).map((a) => ({
-                filename: String(a.filename || ''), mimeType: String(a.mimeType || ''),
-                size: Number(a.size) || 0, attachmentId: String(a.attachmentId || ''), messageId: String(a.messageId || ''),
-              }))
-            : [],
+          attachments: shapeAttachments(m.attachments),
         }))
         .filter((m) => m.text || m.attachments.length);
       history = threadMsgs
@@ -1038,7 +1068,7 @@ app.post('/api/process-email', async (req, res) => {
     const customerBlock = formatCustomer(customer);
 
     // Pass 1: understand the email and pull out the order number / product hints.
-    const initial = await askClaude(body, faq, null, '', customerBlock, { subject, history, customerName });
+    const initial = await askClaude(body, faq, null, '', customerBlock, { subject, history, customerName, attachments: latestAttachments });
 
     let shopifyData = null;
     let orderMismatch = null;
@@ -1079,7 +1109,7 @@ app.post('/api/process-email', async (req, res) => {
     // Pass 2: answer again, now with the real order and product data in hand.
     const needsSecondPass = Boolean(shopifyData) || products.length > 0;
     const final = needsSecondPass || orderMismatch
-      ? await askClaude(body, faq, shopifyData, formatProducts(products), customerBlock, { subject, orderMismatch, history, customerName })
+      ? await askClaude(body, faq, shopifyData, formatProducts(products), customerBlock, { subject, orderMismatch, history, customerName, attachments: latestAttachments })
       : initial;
 
     const needsHuman = Boolean(final.needsHuman) || Boolean(orderMismatch);
@@ -1112,6 +1142,7 @@ app.post('/api/process-email', async (req, res) => {
       drafts: drafts,
       rawBody: String(rawBody),
       thread: threadMsgs,
+      attachments: latestAttachments,
       customerProfile: customer
         ? {
             id: customer.id, name: customer.name, firstName: customer.firstName, lastName: customer.lastName,
@@ -1443,6 +1474,211 @@ app.get('/api/shopify-check', async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Customer photos. The Gmail import posts each image here once; the Inbox
+// reads them back with the dashboard token (as ?token= so <img> tags work).
+// ---------------------------------------------------------------------------
+app.post('/api/attachments', async (req, res) => {
+  try {
+    const { threadId, messageId, attachmentId, filename, mimeType, size, data } = req.body || {};
+    if (!messageId || !attachmentId || !data) return res.status(400).json({ error: 'messageId, attachmentId and data are required' });
+    if (!(dbReady && Attachment)) return res.status(503).json({ error: 'Database not ready' });
+    const buf = Buffer.from(String(data).replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+    if (!buf.length) return res.status(400).json({ error: 'Empty file' });
+    if (buf.length > 8 * 1024 * 1024) return res.status(413).json({ error: 'File too large' });
+    await Attachment.findOneAndUpdate(
+      { messageId: String(messageId), attachmentId: String(attachmentId) },
+      { threadId: String(threadId || ''), filename: String(filename || 'file'), mimeType: String(mimeType || 'application/octet-stream'), size: buf.length, data: buf },
+      { upsert: true, new: true }
+    );
+    res.json({ ok: true, bytes: buf.length });
+  } catch (err) {
+    console.error('Attachment save failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/att/:messageId/:attachmentId', async (req, res) => {
+  if (!readGate(req, res)) return;
+  try {
+    if (!(dbReady && Attachment)) return res.status(503).json({ error: 'Database not ready' });
+    const a = await Attachment.findOne({ messageId: req.params.messageId, attachmentId: req.params.attachmentId }).lean();
+    if (!a || !a.data) return res.status(404).json({ error: 'Not stored' });
+    res.set('Content-Type', a.mimeType || 'application/octet-stream');
+    res.set('Content-Disposition', `inline; filename="${String(a.filename || 'file').replace(/"/g, '')}"`);
+    res.set('Cache-Control', 'private, max-age=86400');
+    res.send(Buffer.isBuffer(a.data) ? a.data : Buffer.from(a.data.buffer || a.data));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Which stored photos exist for a thread - lets the Inbox know what to render
+// without probing every attachment id.
+app.get('/api/att-index', async (req, res) => {
+  if (!readGate(req, res)) return;
+  try {
+    if (!(dbReady && Attachment)) return res.json({ ok: true, stored: [] });
+    const threadId = String(req.query.threadId || '');
+    if (!threadId) return res.status(400).json({ error: 'Pass ?threadId=' });
+    const rows = await Attachment.find({ threadId }, { messageId: 1, attachmentId: 1, mimeType: 1, size: 1, filename: 1 }).lean();
+    res.json({ ok: true, stored: rows.map((r) => ({ messageId: r.messageId, attachmentId: r.attachmentId, mimeType: r.mimeType, size: r.size, filename: r.filename })) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Customer search for the panel. By email first; if that misses, by the order
+// number in the email (people check out with one address and write from
+// another), and finally a name search that returns candidates to pick from.
+// ---------------------------------------------------------------------------
+const ORDER_OWNER_QUERY = `
+  query($q: String!) {
+    orders(first: 1, query: $q) { edges { node { name email customer { id email displayName } } } }
+  }`;
+const CUSTOMER_SEARCH_QUERY = `
+  query($q: String!) {
+    customers(first: 5, query: $q) { edges { node { id displayName email numberOfOrders defaultAddress { city provinceCode } } } }
+  }`;
+
+async function customerByOrderNumber(orderNumber) {
+  const raw = String(orderNumber || '').replace(/^#/, '').trim();
+  if (!raw) return null;
+  try {
+    const data = await shopifyGraphQL(ORDER_OWNER_QUERY, { q: `name:#${raw}` });
+    const edge = data.orders && data.orders.edges && data.orders.edges[0];
+    if (!edge) return null;
+    const o = edge.node;
+    const email = (o.customer && o.customer.email) || o.email;
+    return email ? getCustomerContext(email) : null;
+  } catch (err) {
+    console.error('Order owner lookup failed:', err.message);
+    return null;
+  }
+}
+
+async function searchCustomers(name) {
+  const q = String(name || '').trim();
+  if (q.length < 2) return [];
+  try {
+    const data = await shopifyGraphQL(CUSTOMER_SEARCH_QUERY, { q });
+    return ((data.customers && data.customers.edges) || []).map((e) => ({
+      id: e.node.id, name: e.node.displayName, email: e.node.email, totalOrders: e.node.numberOfOrders,
+      location: e.node.defaultAddress ? [e.node.defaultAddress.city, e.node.defaultAddress.provinceCode].filter(Boolean).join(', ') : null,
+    }));
+  } catch (err) {
+    console.error('Customer search failed:', err.message);
+    return [];
+  }
+}
+
+function shapeProfile(customer) {
+  if (!customer) return null;
+  return {
+    id: customer.id, name: customer.name, firstName: customer.firstName, lastName: customer.lastName,
+    email: customer.email, phone: customer.phone, since: customer.since, address: customer.address,
+    totalOrders: customer.totalOrders, totalSpent: customer.totalSpent, location: customer.location,
+    tags: customer.tags, note: customer.note, orders: customer.orders,
+  };
+}
+
+app.get('/api/customer-search', async (req, res) => {
+  if (!readGate(req, res)) return;
+  try {
+    const email = String(req.query.email || '').trim().toLowerCase();
+    const order = String(req.query.order || '').trim();
+    const name = String(req.query.name || '').trim();
+    let customer = email ? await getCustomerContext(email) : null;
+    let matchedBy = customer ? 'email' : null;
+    if (!customer && order) { customer = await customerByOrderNumber(order); if (customer) matchedBy = 'order'; }
+    let candidates = [];
+    if (!customer && name) candidates = await searchCustomers(name);
+    if (!customer && !candidates.length && email) {
+      // Last try: the part before the @ is often the person's name.
+      const guess = email.split('@')[0].replace(/[\d._-]+/g, ' ').trim();
+      if (guess.length >= 3) candidates = await searchCustomers(guess);
+    }
+    const cart = customer ? await getOpenCart(customer.email || email) : null;
+    res.json({ ok: true, matchedBy, profile: shapeProfile(customer), cart, candidates });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Install-on-phone bits: a web app manifest and icons so "Add to Home Screen"
+// opens the Inbox full-screen with its own icon.
+// ---------------------------------------------------------------------------
+let iconCache = null;
+function icons() {
+  if (iconCache) return iconCache;
+  try {
+    iconCache = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, 'icons.json'), 'utf8'));
+  } catch (e) {
+    iconCache = {};
+  }
+  return iconCache;
+}
+function sendIcon(res, key) {
+  const b64 = icons()[key];
+  if (!b64) return res.status(404).end();
+  res.set('Content-Type', 'image/png');
+  res.set('Cache-Control', 'public, max-age=604800');
+  res.send(Buffer.from(b64, 'base64'));
+}
+app.get('/icon-192.png', (req, res) => sendIcon(res, '192'));
+app.get('/apple-touch-icon.png', (req, res) => sendIcon(res, 'apple'));
+app.get('/manifest.webmanifest', (req, res) => {
+  res.set('Content-Type', 'application/manifest+json');
+  res.json({
+    name: 'Crib Essentials Inbox',
+    short_name: 'CE Inbox',
+    description: 'Customer email inbox for Crib Essentials',
+    start_url: '/',
+    scope: '/',
+    display: 'standalone',
+    background_color: '#111111',
+    theme_color: '#111111',
+    icons: [
+      { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png', purpose: 'maskable' },
+    ],
+  });
+});
+
+// Non-sensitive import check: which threads are in, how much conversation each
+// carries, and whether photos came through. No customer text is exposed.
+app.get('/api/import-status', async (req, res) => {
+  try {
+    const rows = await listLeads();
+    let stored = [];
+    if (dbReady && Attachment) {
+      try { stored = await Attachment.find({}, { threadId: 1, messageId: 1 }).lean(); } catch (e) { /* ignore */ }
+    }
+    res.json({
+      ok: true,
+      count: rows.length,
+      leads: rows.map((l) => ({
+        threadId: l.threadId || null,
+        status: l.status,
+        needsHuman: Boolean(l.needsHuman),
+        threadLen: Array.isArray(l.thread) ? l.thread.length : 0,
+        attachments: (Array.isArray(l.attachments) ? l.attachments.length : 0) +
+          (Array.isArray(l.thread) ? l.thread.reduce((n, m) => n + ((m.attachments || []).length), 0) : 0),
+        drafts: Array.isArray(l.drafts) ? l.drafts.length : 0,
+        hasProfile: Boolean(l.customerProfile),
+        summaryLen: String(l.aiAnalysis || '').length,
+        replyLen: String(l.aiResponse || '').length,
+        createdAt: l.createdAt,
+      })),
+      storedAttachments: stored.length,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/health', async (req, res) => {
   let leadCount = memoryLeads.length;
   if (dbReady && Lead) {
@@ -1454,7 +1690,7 @@ app.get('/api/health', async (req, res) => {
   }
   res.json({
     status: 'ok',
-    version: 'v12.9 - strips "Sent from my iPhone" and store signatures, keeps attachment pointers on thread messages',
+    version: 'v13.0 - customer photos in the Inbox, customer search by order/name, install-on-phone manifest, import status',
     storage: dbReady ? 'mongodb (persistent)' : 'in-memory (resets on restart)',
     dbError: dbError || null,
     leadsStored: leadCount,
