@@ -19,6 +19,7 @@
     --line:#e6e4e1; --soft:#f2f0ed; --bubble:#f1efec; --black:#151515;
     --accent:#c4693d; --accent-soft:#f8ebe4; --accent-ink:#8f4523;
     --good:#2f7d4f; --good-soft:#e6f3ea; --warn:#b26a00; --warn-soft:#fff3df;
+    --sky:#2f5f9e; --sky-soft:#e6eef9; --plum:#6d3f7a; --plum-soft:#f3eaf6; --teal:#1f6b6b; --teal-soft:#e2f2f1;
     --top:#111111; --top-ink:#ffffff;
     --r:14px;
   }
@@ -27,7 +28,8 @@
   body{margin:0;background:var(--bg);color:var(--ink);
     font:14px/1.45 -apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,Helvetica,Arial,sans-serif}
   a{color:var(--ink)}
-  .top{height:52px;background:var(--top);color:var(--top-ink);display:flex;align-items:center;gap:14px;padding:0 18px;padding-top:env(safe-area-inset-top)}
+  .top{height:52px;background:var(--top);color:var(--top-ink);display:flex;align-items:center;gap:14px;padding:0 18px;padding-top:env(safe-area-inset-top);position:relative}
+  .top:after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;background:linear-gradient(90deg,var(--accent) 0 30%,var(--sky) 30% 50%,var(--good) 50% 70%,var(--plum) 70% 85%,var(--warn) 85% 100%)}
   .top h1{margin:0;font-size:15px;font-weight:700;letter-spacing:.01em;display:flex;align-items:center;gap:10px}
   .logo{width:26px;height:26px;border-radius:7px;background:#fff;color:#111;font-weight:800;font-size:11px;display:flex;align-items:center;justify-content:center;position:relative;flex:none}
   .logo:after{content:"";position:absolute;left:6px;right:6px;bottom:4px;height:2px;border-radius:2px;background:var(--accent)}
@@ -79,7 +81,11 @@
   .tab .n{font-size:10px;background:var(--soft);color:var(--muted);border-radius:999px;padding:1px 4px;min-width:14px;text-align:center}
   .tab.on{background:var(--ink);color:#fff;font-weight:600}
   .tab.on .n{background:rgba(255,255,255,.2);color:#fff}
-  .tab[data-f="needs"].on,.tab[data-f="rem"].on{background:var(--accent)}
+  .tab[data-f="needs"].on{background:var(--accent)}
+  .tab[data-f="open"].on{background:var(--sky)}
+  .tab[data-f="sent"].on{background:var(--good)}
+  .tab[data-f="other"].on{background:var(--plum)}
+  .tab[data-f="rem"].on{background:var(--warn)}
   .tab .n.hot{background:var(--accent);color:#fff}
   .tab.on .n.hot{background:rgba(255,255,255,.28)}
   .search{padding:8px 10px;border-bottom:1px solid var(--line)}
@@ -91,6 +97,8 @@
   .row.sel{background:var(--soft)}
   .row.sel:before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--ink)}
   .row.needs.sel:before{background:var(--accent)}
+  .row.sel:before{background:var(--sky)}
+  .row.needs.sel:before{background:var(--accent)}
   .av{width:38px;height:38px;border-radius:50%;background:var(--soft);color:var(--ink);font-weight:700;font-size:13px;
     display:flex;align-items:center;justify-content:center;flex:none;border:1px solid var(--line)}
   .av.c0{background:#ecebe8;color:#2a2a2a}.av.c1{background:#f8ebe4;color:#8f4523}.av.c2{background:#e6f3ea;color:#2f7d4f}
@@ -98,13 +106,13 @@
   .av.c6{background:#e5f4f4;color:#1f6b6b}.av.c7{background:#f0ede3;color:#5c4d1a}
   .chip{display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;border-radius:999px;padding:2px 7px;vertical-align:middle;white-space:nowrap}
   .chip.needs{background:var(--accent-soft);color:var(--accent-ink)}
-  .chip.other{background:#ececec;color:#555}
+  .chip.other{background:var(--plum-soft);color:var(--plum)}
   .movebtn{padding:5px 11px;border:1px solid var(--line);border-radius:14px;background:transparent;font:inherit;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap}
   .movebtn:hover{border-color:var(--ink);color:var(--ink)}
   .movebtn .short{display:none}
-  .chip.draft{background:var(--soft);color:var(--muted)}
+  .chip.draft{background:var(--sky-soft);color:var(--sky)}
   .chip.sent{background:var(--good-soft);color:var(--good)}
-  .chip.photo{background:#e8eef7;color:#2f4f7d}
+  .chip.photo{background:var(--teal-soft);color:var(--teal)}
   .row .mid{min-width:0;flex:1}
   .row .r1{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
   .row .nm{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -123,13 +131,15 @@
   .chead .nm{font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .chead .em{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .chead .badge{flex:none;font-size:12px;color:var(--muted);border:1px solid var(--line);border-radius:14px;padding:3px 10px}
-  .summary{margin:12px 20px 0;background:var(--accent-soft);border-left:3px solid var(--accent);border-radius:10px;padding:9px 12px;font-size:13px;color:var(--accent-ink)}
-  .summary b{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;color:var(--accent-ink);opacity:.8}
+  .summary{margin:8px 20px 0;display:flex;align-items:baseline;gap:8px;font-size:12.5px;color:var(--accent-ink);cursor:pointer;line-height:1.35}
+  .summary b{flex:none;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--accent);font-weight:800}
+  .summary span{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .summary.open span{white-space:normal}
   .msgs{flex:1;overflow-y:auto;padding:18px 20px;display:flex;flex-direction:column;gap:10px}
-  .day{align-self:center;font-size:12px;color:var(--faint);font-weight:600;margin:8px 0 2px}
+  .day{align-self:center;font-size:11px;color:var(--sky);font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin:8px 0 2px;background:var(--sky-soft);padding:2px 10px;border-radius:999px}
   .sys{align-self:center;font-size:12px;color:var(--faint)}
   .m{max-width:72%;padding:11px 14px;border-radius:18px;white-space:pre-wrap;word-wrap:break-word;position:relative}
-  .m.them{align-self:flex-start;background:var(--bubble);border-bottom-left-radius:6px}
+  .m.them{align-self:flex-start;background:var(--sky-soft);border-bottom-left-radius:6px}
   .m.us{align-self:flex-end;background:var(--ink);color:#fff;border-bottom-right-radius:6px}
   .m.us .t,.m.us .who{color:#bdbdbd}
   .m.draft{background:var(--panel);color:var(--muted);border:1px dashed var(--line)}
@@ -157,6 +167,8 @@
   .radd .btn{padding:7px 13px;font-size:13px;flex:none}
   .rgrp{padding:10px 12px 4px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
   .rgrp.late{color:var(--accent-ink)}
+  .rgrp.today{color:var(--warn)}
+  .rgrp.soon{color:var(--sky)}
   .rem{display:flex;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);align-items:flex-start;background:var(--panel)}
   .rem.late{background:var(--accent-soft)}
   .rem.done{opacity:.55}
@@ -187,7 +199,7 @@
   .notice.sent{background:var(--good-soft);color:var(--good)}
   .tones{display:flex;gap:6px;margin-bottom:8px}
   .tone{padding:5px 12px;border:1px solid var(--line);border-radius:16px;background:transparent;color:var(--muted);font:inherit;font-size:12px;cursor:pointer}
-  .tone.on{background:var(--black);border-color:var(--black);color:#fff;font-weight:600}
+  .tone.on{background:var(--sky);border-color:var(--sky);color:#fff;font-weight:600}
   .tone.edited{border-color:var(--accent);color:var(--accent-ink)}
   .tone.edited{border-style:dashed}
   .box{border:1.5px solid var(--black);border-radius:12px;overflow:hidden}
@@ -195,7 +207,15 @@
   .box textarea{width:100%;min-height:96px;max-height:40vh;padding:12px 14px;border:0;resize:vertical;font:inherit;color:var(--ink);background:transparent;display:block}
   .box textarea:focus{outline:0}
   .box textarea::placeholder{color:var(--faint)}
-  .bar{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px solid var(--line);background:#fafafa}
+  .bar{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px solid var(--line);background:#fafafa;flex-wrap:wrap}
+  .attach{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--muted);font:inherit;font-size:13px;cursor:pointer}
+  .attach:hover{border-color:var(--teal);color:var(--teal)}
+  .attach input{display:none}
+  .thumbs{display:flex;gap:8px;flex-wrap:wrap;padding:8px 10px 0}
+  .thumb{position:relative;width:64px;height:64px;border-radius:8px;overflow:hidden;border:1px solid var(--line)}
+  .thumb img{width:100%;height:100%;object-fit:cover;display:block}
+  .thumb button{position:absolute;top:2px;right:2px;width:20px;height:20px;border-radius:50%;border:0;background:rgba(0,0,0,.65);color:#fff;font-size:13px;line-height:20px;padding:0;cursor:pointer}
+  .thumb .sz{position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);color:#fff;font-size:9px;text-align:center;padding:1px 0}
   .bar .grow{flex:1}
   .btn{padding:9px 16px;border:0;border-radius:9px;font:inherit;font-weight:600;cursor:pointer;background:var(--black);color:#fff}
   .btn.accent{background:var(--accent)}
@@ -212,7 +232,10 @@
   .cust .kind.ret{color:var(--good)}
   .cust .kind.none{color:var(--faint)}
   .stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:12px 0}
-  .stat{background:var(--soft);border-radius:10px;padding:9px 10px}
+  .stat{background:var(--soft);border-radius:10px;padding:9px 10px;border-top:3px solid var(--line)}
+  .stat:nth-child(1){background:var(--sky-soft);border-top-color:var(--sky)}
+  .stat:nth-child(2){background:var(--good-soft);border-top-color:var(--good)}
+  .stat:nth-child(3){background:var(--warn-soft);border-top-color:var(--warn)}
   .stat b{display:block;font-size:15px}
   .stat span{font-size:11px;color:var(--muted)}
   .cands{margin-top:12px}
@@ -308,7 +331,7 @@ var API_URL = (/^https?:$/.test(location.protocol) && !/netlify\.app$/.test(loca
   ? location.origin : 'https://crib-essentials-email-agent.onrender.com';
 
 var leads = [], convos = [], filter = 'all', query = '', selectedKey = null, historyOpen = {}, noToken = false;
-var reminders = [], showDone = false, remindOpen = {};
+var reminders = [], showDone = false, remindOpen = {}, sumOpen = {}, pendingPhotos = {};
 
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
   return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
@@ -596,8 +619,8 @@ function renderReminders(){
   var done = list.filter(function(r){ return r.done; }).sort(function(a,b){ return new Date(b.doneAt || 0) - new Date(a.doneAt || 0); });
   var groups = [
     ['Overdue', open.filter(isOverdue), 'late'],
-    ['Today', open.filter(isToday), ''],
-    ['Coming up', open.filter(function(r){ return r.dueAt && !isOverdue(r) && !isToday(r); }), ''],
+    ['Today', open.filter(isToday), 'today'],
+    ['Coming up', open.filter(function(r){ return r.dueAt && !isOverdue(r) && !isToday(r); }), 'soon'],
     ['No date', open.filter(function(r){ return !r.dueAt; }), ''],
   ];
   var html = '<div class="radd"><form id="remAdd">' +
@@ -721,7 +744,7 @@ function renderConvo(){
     '<button class="movebtn" id="moveBtn" title="' + (c.other ? 'Put this back with the customers' : 'Move this out of the customer list') + '"><span class="full">' + (c.other ? 'Move to customers' : 'Not a customer') + '</span><span class="short">' + (c.other ? 'To customers' : 'Not customer') + '</span></button>' +
     '<button class="custbtn" id="custBtn">Customer</button></div>';
 
-  if(latest.aiAnalysis) html += '<div class="summary"><b>Summary</b>' + esc(latest.aiAnalysis) + '</div>';
+  if(latest.aiAnalysis) html += '<div class="summary' + (sumOpen[c.key] ? ' open' : '') + '" id="sumBox" title="Tap to expand"><b>Summary</b><span>' + esc(latest.aiAnalysis) + '</span></div>';
   html += '<div class="msgs" id="msgs">';
   var lastDay = '';
   c.items.forEach(function(l, idx){
@@ -739,7 +762,7 @@ function renderConvo(){
     if(d !== lastDay){ html += '<div class="day">' + esc(d) + '</div>'; lastDay = d; }
     html += bubble('them', l.question || '', 'Sent ' + stamp(sentAt(l)), '', l.attachments);
     if(l.status === 'sent'){
-      html += bubble('us', l.sentBody || l.aiResponse || '', 'Replied ' + stamp(l.sentAt));
+      html += bubble('us', l.sentBody || l.aiResponse || '', 'Replied ' + stamp(l.sentAt), '', l.sentAttachments);
     } else if(idx < c.items.length - 1){
       html += bubble('us draft', l.aiResponse || '', 'Draft — never sent');
     }
@@ -766,7 +789,9 @@ function renderConvo(){
       ensureDrafts(latest);
     }
     html += '<div class="box" id="box"><textarea id="composeBox" placeholder="Write email…">' + esc(drafts[0].text) + '</textarea>' +
-      '<div class="bar"><button class="btn ghost" id="resetBtn">Reset</button><span class="grow"></span>' +
+      '<div class="thumbs" id="thumbs"></div>' +
+      '<div class="bar"><button class="btn ghost" id="resetBtn">Reset</button>' +
+      '<label class="attach" title="Attach up to 4 photos">&#128247; Photo<input type="file" id="photoInput" accept="image/*" multiple></label><span class="grow"></span>' +
       '<span class="sendmsg" id="sendMsg"></span><button class="btn" id="sendBtn">Send email</button></div></div>';
     html += '<div class="hint"><span>' + (latest.threadId
       ? 'Replies to ' + esc(c.email) + ' in the original thread from support@1cribessential.com.'
@@ -790,7 +815,10 @@ function renderConvo(){
 
   var moreBtn = document.getElementById('moreBtn');
   if(moreBtn){ moreBtn.onclick = function(){ historyOpen[c.key] = !historyOpen[c.key]; renderConvo(); }; }
+  var sumBox = document.getElementById('sumBox');
+  if(sumBox){ sumBox.onclick = function(){ sumOpen[c.key] = !sumOpen[c.key]; sumBox.classList.toggle('open', sumOpen[c.key]); }; }
   wireRemind(c);
+  wirePhotos(c);
 
   var sendBtn = document.getElementById('sendBtn');
   if(sendBtn){
@@ -1164,6 +1192,58 @@ async function setAudience(c, audience, btn){
   }
 }
 
+// Photos picked for the reply, kept per conversation so switching threads
+// does not lose them. Big phone photos are shrunk in the browser first
+// (longest side 1600px, JPEG) so the email stays a sensible size.
+function shrinkImage(file){
+  return new Promise(function(resolve, reject){
+    var url = URL.createObjectURL(file);
+    var img = new Image();
+    img.onload = function(){
+      var max = 1600, w = img.width, h = img.height;
+      var scale = Math.min(1, max / Math.max(w, h));
+      var cv = document.createElement('canvas');
+      cv.width = Math.round(w * scale); cv.height = Math.round(h * scale);
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      URL.revokeObjectURL(url);
+      var keepPng = /png/i.test(file.type) && file.size < 600000 && scale === 1;
+      var data = keepPng ? cv.toDataURL('image/png') : cv.toDataURL('image/jpeg', 0.85);
+      var name = String(file.name || 'photo').replace(/\.[^.]+$/, '') + (keepPng ? '.png' : '.jpg');
+      resolve({ filename: name, mimeType: keepPng ? 'image/png' : 'image/jpeg', data: data, bytes: Math.round((data.length - data.indexOf(',')) * 0.75) });
+    };
+    img.onerror = function(){ URL.revokeObjectURL(url); reject(new Error('That file is not an image.')); };
+    img.src = url;
+  });
+}
+function renderThumbs(c){
+  var el = document.getElementById('thumbs');
+  if(!el) return;
+  var list = pendingPhotos[c.key] || [];
+  el.innerHTML = list.map(function(p, i){
+    return '<div class="thumb"><img src="' + p.data + '" alt=""><button type="button" data-i="' + i + '" title="Remove">&times;</button><span class="sz">' + Math.round(p.bytes / 1024) + ' KB</span></div>';
+  }).join('');
+  el.style.display = list.length ? 'flex' : 'none';
+  Array.prototype.forEach.call(el.querySelectorAll('button'), function(b){
+    b.onclick = function(){ list.splice(Number(b.getAttribute('data-i')), 1); renderThumbs(c); };
+  });
+}
+function wirePhotos(c){
+  var input = document.getElementById('photoInput');
+  if(!input) return;
+  renderThumbs(c);
+  input.onchange = async function(){
+    var files = Array.prototype.slice.call(input.files || []);
+    input.value = '';
+    var list = pendingPhotos[c.key] = pendingPhotos[c.key] || [];
+    for(var i = 0; i < files.length; i++){
+      if(list.length >= 4){ window.alert('Up to 4 photos per reply.'); break; }
+      try{ list.push(await shrinkImage(files[i])); }
+      catch(e){ window.alert(e.message); }
+    }
+    renderThumbs(c);
+  };
+}
+
 async function sendReply(lead, btn){
   var box = document.getElementById('composeBox');
   var msg = document.getElementById('sendMsg');
@@ -1174,9 +1254,12 @@ async function sendReply(lead, btn){
   if(!token){ askToken('Enter your dashboard token to send.'); return; }
   btn.disabled = true; msg.className='sendmsg'; msg.textContent='Sending…';
   try{
+    var key = lead.threadId || String(lead.email || '').toLowerCase() || lead._id;
+    var photos = (pendingPhotos[key] || []).map(function(p){ return { filename: p.filename, mimeType: p.mimeType, data: p.data }; });
+    if(photos.length) msg.textContent = 'Sending with ' + photos.length + ' photo' + (photos.length === 1 ? '' : 's') + '…';
     var r = await fetch(API_URL + '/api/leads/' + encodeURIComponent(lead._id) + '/send', {
       method:'POST', headers:{ 'Content-Type':'application/json', 'x-dashboard-token': token },
-      body: JSON.stringify({ body: text })
+      body: JSON.stringify({ body: text, attachments: photos })
     });
     var data = await r.json().catch(function(){ return {}; });
     if(!r.ok){
@@ -1184,6 +1267,7 @@ async function sendReply(lead, btn){
       throw new Error(data.error || ('Server returned ' + r.status));
     }
     msg.className='sendmsg good'; msg.textContent='Sent.';
+    delete pendingPhotos[key];
     await load();
   }catch(err){
     msg.className='sendmsg bad'; msg.textContent = err.message; btn.disabled = false;
