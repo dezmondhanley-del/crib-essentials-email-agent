@@ -319,10 +319,20 @@ function when(d){
   if (mins < 60) return mins + 'm';
   if (mins < 1440) return Math.floor(mins/60) + 'h';
   if (mins < 1440*7) return Math.floor(mins/1440) + 'd';
-  return t.toLocaleDateString(undefined, {month:'short', day:'numeric'});
+  return t.toLocaleDateString(undefined, t.getFullYear() === now.getFullYear() ? {month:'short', day:'numeric'} : {month:'short', day:'numeric', year:'2-digit'});
 }
 function clock(d){ return d ? new Date(d).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}) : ''; }
-function dayLabel(d){ return d ? new Date(d).toLocaleDateString(undefined, {month:'short', day:'numeric'}) : ''; }
+function dayLabel(d){
+  if(!d) return '';
+  var t = new Date(d), o = {weekday:'short', month:'short', day:'numeric'};
+  if(t.getFullYear() !== new Date().getFullYear()) o.year = 'numeric';
+  return t.toLocaleDateString(undefined, o);
+}
+// Full stamp under a message: "Wed, Sep 3 · 5:20 PM" (year added when it is not this year).
+function stamp(d){ return d ? dayLabel(d) + ' · ' + clock(d) : ''; }
+// When the customer actually sent it. Older records only have the time the
+// bot processed it, so fall back to that.
+function sentAt(l){ return l.receivedAt || l.createdAt; }
 function money(v){ var n = Number(v); return isNaN(n) ? '0.00' : n.toFixed(2); }
 function pretty(s){ s = String(s || '').toLowerCase().replace(/_/g,' '); return s ? s.charAt(0).toUpperCase() + s.slice(1) : '—'; }
 function initials(name, email){
@@ -408,7 +418,7 @@ function group(){
   });
   convos = Object.keys(map).map(function(k){
     var c = map[k];
-    c.items.sort(function(a,b){ return new Date(a.createdAt) - new Date(b.createdAt); });
+    c.items.sort(function(a,b){ return new Date(sentAt(a)) - new Date(sentAt(b)); });
     c.latest = c.items[c.items.length - 1];
     c.name = (c.latest.customerProfile && c.latest.customerProfile.name) || c.latest.customerName || c.latest.email || 'Unknown';
     c.email = c.latest.email || '';
@@ -453,7 +463,7 @@ function render(){
     return matches(c, q);
   }).sort(function(a,b){
     if(a.needs !== b.needs) return a.needs ? -1 : 1;
-    return new Date(b.latest.createdAt) - new Date(a.latest.createdAt);
+    return new Date(sentAt(b.latest)) - new Date(sentAt(a.latest));
   });
 
   var rows = document.getElementById('rows');
@@ -472,7 +482,7 @@ function render(){
       var photos = hasPhotos(l);
       return '<div class="row' + (c.key === selectedKey ? ' sel' : '') + (c.open ? ' unread' : '') + (c.needs ? ' needs' : '') + '" data-k="' + esc(c.key) + '">' +
         '<div class="' + avClass(c.email || c.key) + '">' + esc(initials(c.name, c.email)) + '</div>' +
-        '<div class="mid"><div class="r1"><span class="nm">' + esc(c.name) + '</span><span class="tm">' + esc(when(l.createdAt)) + '</span></div>' +
+        '<div class="mid"><div class="r1"><span class="nm">' + esc(c.name) + '</span><span class="tm" title="' + esc(stamp(sentAt(l))) + '">' + esc(when(sentAt(l))) + '</span></div>' +
         '<div class="sn">' + esc(l.question || '') + '</div>' +
         (l.aiAnalysis ? '<div class="sum">' + esc(l.aiAnalysis) + '</div>' : '') +
         '<div class="sub">' + statusChip(c) + (photos ? '<span class="chip photo">' + photos + ' photo' + (photos === 1 ? '' : 's') + '</span>' : '') +
@@ -721,15 +731,15 @@ function renderConvo(){
       html += '<button class="more" id="moreBtn">' + (historyOpen[c.key] ? 'Hide' : 'Show') + ' earlier conversation (' + hist.length + ')</button>';
       html += '<div class="hist' + (historyOpen[c.key] ? ' open' : '') + '">';
       hist.forEach(function(m){
-        html += bubble(m.mine ? 'us' : 'them', m.text, m.date ? dayLabel(m.date) + ' ' + clock(m.date) : '', m.mine ? 'Crib Essentials' : (m.name || ''), m.attachments);
+        html += bubble(m.mine ? 'us' : 'them', m.text, m.date ? stamp(m.date) : '', m.mine ? 'Crib Essentials' : (m.name || ''), m.attachments);
       });
       html += '</div>';
     }
-    var d = dayLabel(l.createdAt);
+    var d = dayLabel(sentAt(l));
     if(d !== lastDay){ html += '<div class="day">' + esc(d) + '</div>'; lastDay = d; }
-    html += bubble('them', l.question || '', clock(l.createdAt), '', l.attachments);
+    html += bubble('them', l.question || '', 'Sent ' + stamp(sentAt(l)), '', l.attachments);
     if(l.status === 'sent'){
-      html += bubble('us', l.sentBody || l.aiResponse || '', 'Sent ' + clock(l.sentAt));
+      html += bubble('us', l.sentBody || l.aiResponse || '', 'Replied ' + stamp(l.sentAt));
     } else if(idx < c.items.length - 1){
       html += bubble('us draft', l.aiResponse || '', 'Draft — never sent');
     }
