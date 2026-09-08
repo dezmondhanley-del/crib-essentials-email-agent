@@ -1148,11 +1148,36 @@ app.get('/api/product-check', async (req, res) => {
 });
 
 app.get('/api/customer-check', async (req, res) => {
+  if (!readGate(req, res)) return;
   try {
     const email = req.query.email;
     if (!email) return res.status(400).json({ error: 'Pass ?email=someone@example.com' });
     const c = await getCustomerContext(email);
     res.json({ ok: true, found: Boolean(c), customer: c });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Live Shopify panel for the dashboard: profile + open cart for an email.
+// Used for leads saved before this existed, and to refresh stale ones.
+app.get('/api/customer', async (req, res) => {
+  if (!readGate(req, res)) return;
+  try {
+    const email = String(req.query.email || '').trim().toLowerCase();
+    if (!email) return res.status(400).json({ error: 'Pass ?email=' });
+    const [customer, cart] = await Promise.all([getCustomerContext(email), getOpenCart(email)]);
+    res.json({
+      ok: true,
+      profile: customer
+        ? {
+            name: customer.name, email: customer.email, phone: customer.phone, since: customer.since,
+            totalOrders: customer.totalOrders, totalSpent: customer.totalSpent, location: customer.location,
+            tags: customer.tags, note: customer.note, orders: customer.orders,
+          }
+        : null,
+      cart: cart,
+    });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
@@ -1183,7 +1208,7 @@ app.get('/api/health', async (req, res) => {
   }
   res.json({
     status: 'ok',
-    version: 'v12.2 - inbox served from Render at /, token-gated leads, thread split, customer panel + cart, three draft tones',
+    version: 'v12.3 - live /api/customer for the panel, inbox served from Render, token-gated leads, thread split, three draft tones',
     storage: dbReady ? 'mongodb (persistent)' : 'in-memory (resets on restart)',
     dbError: dbError || null,
     leadsStored: leadCount,
