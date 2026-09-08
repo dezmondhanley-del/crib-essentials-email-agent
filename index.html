@@ -359,6 +359,11 @@ function renderConvo(){
     if(drafts.length > 1){
       html += '<div class="tones" id="tones">' + drafts.map(function(d, i){
         return '<button class="tone' + (i === 0 ? ' on' : '') + '" data-i="' + i + '">' + esc(d.label) + '</button>'; }).join('') + '</div>';
+    } else if(latest.aiResponse){
+      // Saved before tone options existed - ask the server to write the other two.
+      html += '<div class="tones"><span class="tone on">Short &amp; warm</span><span class="tone" style="border-style:dashed">' +
+        (draftGen[latest._id] === 'failed' ? 'Tone options unavailable' : 'Preparing Detailed and Formal…') + '</span></div>';
+      ensureDrafts(latest);
     }
     html += '<div class="box" id="box"><textarea id="composeBox" placeholder="Write email…">' + esc(drafts[0].text) + '</textarea>' +
       '<div class="bar"><button class="btn ghost" id="resetBtn">Reset</button><span class="grow"></span>' +
@@ -406,6 +411,21 @@ function renderConvo(){
   }
 }
 
+var draftGen = {};
+function ensureDrafts(l){
+  if(!l || !l._id || draftGen[l._id]) return;
+  draftGen[l._id] = 'loading';
+  postJson('/api/leads/' + encodeURIComponent(l._id) + '/drafts', {})
+    .then(function(d){
+      if(d && Array.isArray(d.drafts) && d.drafts.length > 1){
+        l.drafts = d.drafts; draftGen[l._id] = 'done';
+        var box = document.getElementById('composeBox');
+        var untouched = !box || box.value === (l.aiResponse || '') || box.value === d.drafts[0].text;
+        if(untouched) renderConvo();
+      } else { draftGen[l._id] = 'failed'; renderConvo(); }
+    })
+    .catch(function(){ draftGen[l._id] = 'failed'; renderConvo(); });
+}
 function draftsFor(l){
   var list = Array.isArray(l.drafts) ? l.drafts.filter(function(d){ return d && d.text; }) : [];
   if(!list.length) list = [{ tone: 'short', label: 'Short & warm', text: l.aiResponse || '' }];
