@@ -365,21 +365,26 @@ const CUSTOMER_QUERY = `
     customers(first: 1, query: $q) {
       edges {
         node {
+          id
           displayName
+          firstName
+          lastName
           email
           phone
           createdAt
           numberOfOrders
           amountSpent { amount }
-          defaultAddress { city provinceCode countryCode }
+          defaultAddress { address1 address2 city provinceCode zip countryCode firstName lastName phone }
           tags
           note
           orders(first: 5, sortKey: CREATED_AT, reverse: true) {
             edges {
               node {
+                id
                 name
                 legacyResourceId
                 createdAt
+                shippingAddress { address1 address2 city provinceCode zip countryCode firstName lastName phone }
                 displayFinancialStatus
                 displayFulfillmentStatus
                 totalPriceSet { shopMoney { amount } }
@@ -411,10 +416,14 @@ async function getCustomerContext(email) {
     const c = edge.node;
 
     return {
+      id: c.id,
       name: c.displayName,
+      firstName: c.firstName || '',
+      lastName: c.lastName || '',
       email: c.email,
       phone: c.phone || null,
       since: c.createdAt || null,
+      address: c.defaultAddress || null,
       totalOrders: c.numberOfOrders,
       totalSpent: c.amountSpent ? c.amountSpent.amount : null,
       location: c.defaultAddress
@@ -431,7 +440,9 @@ async function getCustomerContext(email) {
           });
         });
         return {
+          gid: o.id,
           name: o.name,
+          shippingAddress: o.shippingAddress || null,
           adminUrl: o.legacyResourceId
             ? `https://${SHOPIFY_STORE}/admin/orders/${o.legacyResourceId}`
             : null,
@@ -1014,7 +1025,8 @@ app.post('/api/process-email', async (req, res) => {
       thread: split.thread,
       customerProfile: customer
         ? {
-            name: customer.name, email: customer.email, phone: customer.phone, since: customer.since,
+            id: customer.id, name: customer.name, firstName: customer.firstName, lastName: customer.lastName,
+            email: customer.email, phone: customer.phone, since: customer.since, address: customer.address,
             totalOrders: customer.totalOrders, totalSpent: customer.totalSpent, location: customer.location,
             tags: customer.tags, note: customer.note, orders: customer.orders,
           }
@@ -1191,7 +1203,8 @@ app.get('/api/customer', async (req, res) => {
       ok: true,
       profile: customer
         ? {
-            name: customer.name, email: customer.email, phone: customer.phone, since: customer.since,
+            id: customer.id, name: customer.name, firstName: customer.firstName, lastName: customer.lastName,
+            email: customer.email, phone: customer.phone, since: customer.since, address: customer.address,
             totalOrders: customer.totalOrders, totalSpent: customer.totalSpent, location: customer.location,
             tags: customer.tags, note: customer.note, orders: customer.orders,
           }
@@ -1200,6 +1213,87 @@ app.get('/api/customer', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Edits from the dashboard. These need write_orders / write_customers on the
+// Shopify app; without them Shopify answers with an access error, which we
+// pass back in plain words so it is obvious what to fix.
+// ---------------------------------------------------------------------------
+function explainShopifyError(err) {
+  const m = String((err && err.message) || err || '');
+  if (/access|scope|permission|ACCESS_DENIED/i.test(m)) {
+    return 'Shopify refused the change - the app needs the write_orders and write_customers scopes. Add them in the Shopify Dev Dashboard, install the new version, then restart the Render service.';
+  }
+  return m;
+}
+
+function cleanAddress(a) {
+  a = a || {};
+  const pick = (k) => (a[k] === undefined || a[k] === null ? undefined : String(a[k]).trim());
+  return {
+    firstName: pick('firstName'),
+    lastName: pick('lastName'),
+    address1: pick('address1'),
+    address2: pick('address2'),
+    city: pick('city'),
+    provinceCode: pick('provinceCode'),
+    zip: pick('zip'),
+    countryCode: pick('countryCode') || 'US',
+    phone: pick('phone'),
+  };
+}
+
+const ORDER_ADDRESS_MUTATION = `
+  mutation($input: OrderInput!) {
+    orderUpdate(input: $input) {
+      order { id name shippingAddress { address1 address2 city provinceCode zip countryCode firstName lastName phone } }
+      userErrors { field message }
+    }
+  }`;
+
+app.post('/api/orders/address', async (req, res) => {
+  if (!checkToken(req, res)) return;
+  try {
+    const { orderId, address } = req.body || {};
+    if (!orderId || !address) return res.status(400).json({ error: 'orderId and address are required' });
+    const input = { id: orderId, shippingAddress: cleanAddress(address) };
+    const data = await shopifyGraphQL(ORDER_ADDRESS_MUTATION, { input });
+    const errs = (data.orderUpdate && data.orderUpdate.userErrors) || [];
+    if (errs.length) return res.status(400).json({ error: errs.map((e) => e.message).join('; ') });
+    res.json({ ok: true, order: data.orderUpdate.order });
+  } catch (err) {
+    console.error('Order address update failed:', err.message);
+    res.status(500).json({ error: explainShopifyError(err) });
+  }
+});
+
+const CUSTOMER_UPDATE_MUTATION = `
+  mutation($input: CustomerInput!) {
+    customerUpdate(input: $input) {
+      customer { id displayName email phone note }
+      userErrors { field message }
+    }
+  }`;
+
+app.post('/api/customer/update', async (req, res) => {
+  if (!checkToken(req, res)) return;
+  try {
+    const { customerId, firstName, lastName, phone, note } = req.body || {};
+    if (!customerId) return res.status(400).json({ error: 'customerId is required' });
+    const input = { id: customerId };
+    if (firstName !== undefined) input.firstName = String(firstName).trim();
+    if (lastName !== undefined) input.lastName = String(lastName).trim();
+    if (phone !== undefined) input.phone = String(phone).trim() || null;
+    if (note !== undefined) input.note = String(note).trim();
+    const data = await shopifyGraphQL(CUSTOMER_UPDATE_MUTATION, { input });
+    const errs = (data.customerUpdate && data.customerUpdate.userErrors) || [];
+    if (errs.length) return res.status(400).json({ error: errs.map((e) => e.message).join('; ') });
+    res.json({ ok: true, customer: data.customerUpdate.customer });
+  } catch (err) {
+    console.error('Customer update failed:', err.message);
+    res.status(500).json({ error: explainShopifyError(err) });
   }
 });
 
@@ -1228,7 +1322,7 @@ app.get('/api/health', async (req, res) => {
   }
   res.json({
     status: 'ok',
-    version: 'v12.4 - per-item fulfillment + shipments on orders, live /api/customer, inbox served from Render, thread split, three draft tones',
+    version: 'v12.5 - edit shipping address + customer info from the inbox, per-item fulfillment, live /api/customer, thread split, three draft tones',
     storage: dbReady ? 'mongodb (persistent)' : 'in-memory (resets on restart)',
     dbError: dbError || null,
     leadsStored: leadCount,
