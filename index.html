@@ -23,16 +23,40 @@
   .count{font-size:12px;color:var(--muted)}
   .count b{color:var(--ink)}
   .app{display:grid;grid-template-columns:320px minmax(0,1fr) 340px;height:calc(100vh - 52px)}
-  @media (max-width:1100px){ .app{grid-template-columns:280px minmax(0,1fr)} .cust{display:none} }
-  @media (max-width:760px){ .app{grid-template-columns:1fr;height:auto} .convo{min-height:70vh} }
+  .back,.custbtn{display:none}
+  @media (max-width:1100px){
+    .app{grid-template-columns:280px minmax(0,1fr)}
+    .cust{display:none}
+    .custbtn{display:inline-block;margin-left:auto;padding:5px 11px;border:1px solid var(--line);border-radius:14px;background:transparent;font:inherit;font-size:12px;color:var(--muted);cursor:pointer}
+    .chead .badge{margin-left:0}
+    .app.showcust .cust{display:block;position:fixed;inset:52px 0 0 0;z-index:20;padding:18px 20px 40px}
+    .app.showcust .cust .closecust{display:block;margin:-6px 0 12px;background:none;border:0;font:inherit;font-size:13px;color:var(--muted);cursor:pointer;padding:0;text-decoration:underline}
+  }
+  .closecust{display:none}
+  @media (max-width:760px){
+    /* Phone / narrow window: one pane at a time, like the Shopify Inbox app. */
+    .app{grid-template-columns:1fr;height:calc(100vh - 52px)}
+    .app .convo{display:none}
+    .app.showconvo .list{display:none}
+    .app.showconvo .convo{display:flex}
+    .back{display:inline-block;background:none;border:0;font:inherit;font-size:20px;line-height:1;color:var(--ink);cursor:pointer;padding:0 6px 0 0}
+    .m{max-width:88%}
+    .count{display:none}
+    .top{padding:0 14px;gap:10px}
+    .top h1{font-size:15px;white-space:nowrap}
+    .top .st span:last-child{display:none}
+    .chead{padding:10px 12px;gap:8px}
+    .chead .badge{display:none}
+    .chead .nm{font-size:14px}
+  }
 
   /* ---- conversation list ---- */
-  .list{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+  .list{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;min-width:0}
   .tabs{display:flex;gap:4px;padding:10px 12px;border-bottom:1px solid var(--line)}
   .tab{padding:6px 11px;border-radius:8px;border:0;background:transparent;font:inherit;font-size:13px;color:var(--muted);cursor:pointer}
   .tab.on{background:var(--soft);color:var(--ink);font-weight:600}
   .rows{overflow-y:auto;flex:1}
-  .row{display:flex;gap:11px;padding:12px 14px;border-bottom:1px solid var(--line);cursor:pointer}
+  .row{display:flex;gap:11px;padding:12px 14px;border-bottom:1px solid var(--line);cursor:pointer;min-width:0;overflow:hidden}
   .row:hover{background:#fafafa}
   .row.sel{background:var(--soft)}
   .av{width:36px;height:36px;border-radius:50%;background:#e0e0e0;color:#1a1a1a;font-weight:700;font-size:13px;
@@ -244,7 +268,7 @@ function render(){
         '<div class="sub">' + esc(l.subject || '') + (c.items.length > 1 ? ' · ' + c.items.length + ' emails' : '') + '</div></div></div>';
     }).join('');
     Array.prototype.forEach.call(rows.querySelectorAll('.row'), function(el){
-      el.onclick = function(){ selectedKey = el.getAttribute('data-k'); render(); };
+      el.onclick = function(){ selectedKey = el.getAttribute('data-k'); document.querySelector('.app').classList.add('showconvo'); render(); };
     });
   }
   renderConvo();
@@ -269,9 +293,9 @@ function renderConvo(){
   var profile = latest.customerProfile;
   var kind = profile ? (Number(profile.totalOrders) > 1 ? 'Returning customer' : (Number(profile.totalOrders) === 1 ? 'Customer' : 'New')) : 'Not in Shopify';
 
-  var html = '<div class="chead"><div class="av">' + esc(initials(c.name, c.email)) + '</div>' +
+  var html = '<div class="chead"><button class="back" id="backBtn" title="Back to conversations">&#8249;</button><div class="av">' + esc(initials(c.name, c.email)) + '</div>' +
     '<div><div class="nm">' + esc(c.name) + '</div><div class="em">' + esc(c.email) + (latest.subject ? ' · ' + esc(latest.subject) : '') + '</div></div>' +
-    '<span class="badge">' + esc(kind) + '</span></div>';
+    '<span class="badge">' + esc(kind) + '</span><button class="custbtn" id="custBtn">Customer</button></div>';
 
   html += '<div class="msgs" id="msgs">';
   var lastDay = '';
@@ -323,6 +347,11 @@ function renderConvo(){
   var msgs = document.getElementById('msgs');
   if(msgs) msgs.scrollTop = msgs.scrollHeight;
 
+  var backBtn = document.getElementById('backBtn');
+  if(backBtn){ backBtn.onclick = function(){ document.querySelector('.app').classList.remove('showconvo'); }; }
+  var custBtn = document.getElementById('custBtn');
+  if(custBtn){ custBtn.onclick = function(){ document.querySelector('.app').classList.add('showcust'); }; }
+
   var moreBtn = document.getElementById('moreBtn');
   if(moreBtn){ moreBtn.onclick = function(){ historyOpen[c.key] = !historyOpen[c.key]; renderConvo(); }; }
 
@@ -367,17 +396,43 @@ var ICON = {
 function daysAgo(d){ if(!d) return null; return Math.max(0, Math.floor((Date.now() - new Date(d)) / 86400000)); }
 
 var showAllOrders = {};
+// Live Shopify lookups, one per email, so leads saved before the panel
+// existed still get their profile - and stale ones get refreshed.
+var liveCustomer = {};
+function fetchCustomer(email, key){
+  if(!email || liveCustomer[email]) return;
+  liveCustomer[email] = { loading: true };
+  fetch(API_URL + '/api/customer?email=' + encodeURIComponent(email), { headers: { 'x-dashboard-token': getToken() } })
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(d){ liveCustomer[email] = d && d.ok ? { profile: d.profile, cart: d.cart } : { profile: null, cart: null, failed: !d }; })
+    .catch(function(){ liveCustomer[email] = { profile: null, cart: null, failed: true }; })
+    .then(function(){ if(selectedKey === key) renderCustomer(); });
+}
 function renderCustomer(){
   var el = document.getElementById('cust');
   var c = selected();
   if(!c){ el.innerHTML = '<div class="none">Customer details show here.</div>'; return; }
-  var l = c.latest, p = l.customerProfile, cart = l.cart;
-  var html = '<div class="nm">' + esc(c.name) + '</div>';
+  var l = c.latest;
+  var live = liveCustomer[String(c.email || '').toLowerCase()];
+  if(!live){ fetchCustomer(String(c.email || '').toLowerCase(), c.key); live = { loading: true }; }
+  // Prefer the live lookup; fall back to what was saved with the lead.
+  var p = (live && !live.loading && live.profile) ? live.profile : l.customerProfile;
+  var cart = (live && !live.loading) ? (live.cart || (live.profile ? null : l.cart)) : l.cart;
+  if(!p && live && live.loading){
+    el.innerHTML = '<button class="closecust" id="closeCust">&#8249; Back to conversation</button><div class="nm">' + esc(c.name) + '</div><div class="none">Looking up in Shopify…</div>';
+    var ccl = document.getElementById('closeCust');
+    if(ccl){ ccl.onclick = function(){ document.querySelector('.app').classList.remove('showcust'); }; }
+    return;
+  }
+  var html = '<button class="closecust" id="closeCust">&#8249; Back to conversation</button><div class="nm">' + esc((p && p.name) || c.name) + '</div>';
   if(!p){
     html += '<div class="kind">Not found in Shopify</div>' +
       '<div class="fact">' + ICON.mail + '<div class="v">' + esc(c.email) + '</div></div>' +
       '<div class="none" style="margin-top:14px">No orders or cart under this email. They may have checked out with a different address.</div>';
-    el.innerHTML = html; return;
+    el.innerHTML = html;
+    var cc0 = document.getElementById('closeCust');
+    if(cc0){ cc0.onclick = function(){ document.querySelector('.app').classList.remove('showcust'); }; }
+    return;
   }
   var n = Number(p.totalOrders) || 0;
   html += '<div class="kind">' + (n > 1 ? 'Returning customer' : (n === 1 ? 'First order' : 'No orders yet')) + '</div>';
@@ -416,6 +471,8 @@ function renderCustomer(){
     html += '<h4>Orders</h4><div class="none">No orders yet.</div>';
   }
   el.innerHTML = html;
+  var cc = document.getElementById('closeCust');
+  if(cc){ cc.onclick = function(){ document.querySelector('.app').classList.remove('showcust'); }; }
   var va = document.getElementById('viewAll');
   if(va) va.onclick = function(){ showAllOrders[c.key] = !showAllOrders[c.key]; renderCustomer(); };
 }
@@ -482,6 +539,11 @@ Array.prototype.forEach.call(document.querySelectorAll('.tab'), function(b){
     b.classList.add('on'); filter = b.getAttribute('data-f'); render();
   };
 });
+
+window.onerror = function(msg, src, line){
+  var b = document.getElementById('errBox');
+  if(b) b.innerHTML = '<div class="err"><b>Something broke on this page:</b> ' + esc(msg) + ' (line ' + line + '). Screenshot this for Claude.</div>';
+};
 
 load();
 setInterval(load, 15000);
