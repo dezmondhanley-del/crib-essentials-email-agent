@@ -330,7 +330,7 @@ function formatProducts(products) {
     if (p.description) parts.push(`  Product page says: ${p.description}`);
     return parts.join('\n');
   });
-  return `\nRELEVANT PRODUCTS (from the live Shopify catalog - these production and shipping times override any general estimate in the FAQ):\n${lines.join('\n\n')}\n`;
+  return `\nRELEVANT PRODUCTS (from the live Shopify catalog). Use these for details the store policies do not cover - dimensions, materials, colour and size options, installation, price, stock. IMPORTANT: a product page here may be out of date. If its production or shipping time disagrees with the STORE POLICIES above, the policies are correct and you must use the policy figure, not the one on this page:\n${lines.join('\n\n')}\n`;
 }
 
 const CUSTOMER_QUERY = `
