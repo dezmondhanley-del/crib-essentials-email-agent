@@ -64,6 +64,7 @@ if (MONGODB_URI) {
       dbReady = true;
       dbError = null;
       console.log('MongoDB connected - leads will persist');
+      purgeTestLeads();
     })
     .catch((err) => {
       dbError = err.message;
@@ -82,7 +83,27 @@ if (MONGODB_URI) {
   console.warn('MONGODB_URI not set - leads are in memory and reset on restart');
 }
 
+// Test traffic (backtests use @example.com senders) never lands in the inbox.
+function isTestSender(email) {
+  return /@example\.(com|org|net)$/i.test(String(email || '').trim());
+}
+
+// One-time clean-up of test leads left over from FAQ backtesting.
+async function purgeTestLeads() {
+  if (!(dbReady && Lead)) return;
+  try {
+    const r = await Lead.deleteMany({ email: /@example\.(com|org|net)$/i });
+    if (r.deletedCount) console.log(`Removed ${r.deletedCount} test leads`);
+  } catch (err) {
+    console.error('Test lead purge failed:', err.message);
+  }
+}
+
 async function saveLead(lead) {
+  if (isTestSender(lead.email)) {
+    // Return something shaped like a saved lead so backtests still get a reply.
+    return { ...lead, _id: 'test-' + Date.now(), notSaved: true };
+  }
   if (dbReady && Lead) {
     try {
       const doc = await Lead.create(lead);
@@ -1171,6 +1192,29 @@ app.post('/api/leads/:id/send', async (req, res) => {
   }
 });
 
+// Older leads were saved before tone options existed. The dashboard calls
+// this once for such a lead and the three drafts get generated and stored.
+app.post('/api/leads/:id/drafts', async (req, res) => {
+  if (!checkToken(req, res)) return;
+  try {
+    const lead = await findLead(req.params.id);
+    if (!lead) return res.status(404).json({ error: 'Lead not found' });
+    const existing = Array.isArray(lead.drafts) ? lead.drafts.filter((d) => d && d.text) : [];
+    if (existing.length > 1) return res.json({ ok: true, drafts: existing });
+    const drafts = await makeDraftVariants(lead.aiResponse || '', lead.question || '');
+    if (dbReady && Lead) {
+      await Lead.findByIdAndUpdate(req.params.id, { drafts });
+    } else {
+      const m = memoryLeads.find((l) => l._id === req.params.id);
+      if (m) m.drafts = drafts;
+    }
+    res.json({ ok: true, drafts });
+  } catch (err) {
+    console.error('Draft generation failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/product-check', async (req, res) => {
   const term = req.query.q || 'mirror';
   const out = { term };
@@ -1342,7 +1386,7 @@ app.get('/api/health', async (req, res) => {
   }
   res.json({
     status: 'ok',
-    version: 'v12.6 - FAQ from repo file, never names staff in replies, edit address + customer info, per-item fulfillment, thread split, three draft tones',
+    version: 'v12.7 - test leads purged and never saved, tone options on demand for older leads, FAQ from repo file, never names staff',
     storage: dbReady ? 'mongodb (persistent)' : 'in-memory (resets on restart)',
     dbError: dbError || null,
     leadsStored: leadCount,
