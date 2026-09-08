@@ -42,6 +42,11 @@ const leadSchema = new mongoose.Schema(
     status: { type: String, default: 'drafted' },
     needsHuman: { type: Boolean, default: false },
     flagReason: String,
+    // "customer" for people who bought or want to buy; "other" for vendor
+    // pitches, collab requests, newsletters, spam. The Inbox keeps "other"
+    // out of the main list. Dezmond can flip it from the dashboard.
+    audience: { type: String, default: 'customer' },
+    audienceSetBy: String,
     // Three ways of saying the same thing. drafts[0] is always the vetted
     // original; the others are tone rewrites that may not add facts.
     drafts: [{ tone: String, label: String, text: String }],
@@ -145,26 +150,50 @@ async function saveLead(lead) {
   return withId;
 }
 
+// Cheap guess for leads saved before the model started classifying them, and
+// a safety net if the model leaves the field out.
+const OTHER_PATTERNS = [
+  /\b(collab|collaborat|partnership|partner with|sponsor|ambassador|influencer|creator|content creator|ugc|promote your|promo code for my|my audience|my followers|shoutout|brand deal|affiliate)\b/i,
+  /\b(seo|backlinks?|guest post|link building|ppc|paid ads|ad campaign|lead generation|marketing agency|digital agency|web design|website redesign|app development|virtual assistant|freelancer|our services|our agency|case stud(y|ies)|book a call|schedule a call|free audit|proposal)\b/i,
+  /\b(wholesale (pricing|catalog|supplier)|dropship|private label|manufactur(er|ing) (partner|services)|factory|bulk supplier|packaging solutions|3pl|fulfillment services)\b/i,
+  /\b(unsubscribe|view (this|in) browser|newsletter|webinar|limited time offer|exclusive offer for|invoice attached|payment overdue)\b/i,
+  /\b(hiring|job opening|resume|cv attached|apply for|internship|position at)\b/i,
+];
+const CUSTOMER_PATTERNS = [
+  /\b(my order|order ?#?\s?\d{3,}|tracking|refund|shipped|shipping|deliver|arrived|package|where is|cancel|address|damaged|broken|missing|wrong (item|size|color|colour)|return|exchange|receipt|confirmation|i (ordered|bought|purchased|paid)|placed an order|how long|when will|in stock|price|size|dimensions|fit)\b/i,
+];
+function guessAudience(subject, body, from) {
+  const text = `${subject || ''}\n${body || ''}`;
+  if (CUSTOMER_PATTERNS.some((re) => re.test(text))) return 'customer';
+  if (OTHER_PATTERNS.some((re) => re.test(text))) return 'other';
+  return 'customer';
+}
+function withAudience(lead) {
+  if (!lead) return lead;
+  if (!lead.audience) lead.audience = guessAudience(lead.subject, lead.question, lead.email);
+  return lead;
+}
+
 async function listLeads() {
   if (dbReady && Lead) {
     try {
-      return await Lead.find().sort({ createdAt: -1 }).limit(MAX_LEADS).lean();
+      return (await Lead.find().sort({ createdAt: -1 }).limit(MAX_LEADS).lean()).map(withAudience);
     } catch (err) {
       console.error('Lead read from MongoDB failed:', err.message);
     }
   }
-  return memoryLeads;
+  return memoryLeads.map(withAudience);
 }
 
 async function findLead(id) {
   if (dbReady && Lead) {
     try {
-      return await Lead.findById(id).lean();
+      return withAudience(await Lead.findById(id).lean());
     } catch (err) {
       console.error('Lead lookup failed:', err.message);
     }
   }
-  return memoryLeads.find((l) => l._id === id) || null;
+  return withAudience(memoryLeads.find((l) => l._id === id) || null);
 }
 
 const SHOPIFY_STORE = process.env.SHOPIFY_STORE || 'freemind-5328.myshopify.com';
@@ -943,8 +972,11 @@ Respond with ONLY raw JSON, no markdown fences:
   "extractedOrderNumber": "order number if mentioned in the body OR the subject line, else null",
   "productKeywords": ["product names or types mentioned, else empty array"],
   "needsHuman": true or false,
-  "flagReason": "if needsHuman is true, a few words on what Dezmond needs to do; else null"
+  "flagReason": "if needsHuman is true, a few words on what Dezmond needs to do; else null",
+  "audience": "customer" | "other"
 }
+
+audience is "customer" for anyone who has bought, is asking about an order, or is asking about buying - even if they are angry or vague. audience is "other" for everything that is not a customer: vendors, agencies and freelancers pitching services (marketing, SEO, ads, packaging, manufacturing, software, web design), influencer / creator / collab / partnership requests, job seekers, wholesale and reseller pitches from businesses, newsletters and marketing blasts, cold outreach, spam, and automated notifications. If someone pitches a service AND asks about buying, they are "customer".
 
 Set needsHuman to true whenever the STORE POLICIES say to flag the email for Dezmond, whenever your reply says you will check on something and come back, whenever the customer is asking for a change you cannot make (address, cancellation, refund, swap, expedite), and whenever the email is a threat, a legal notice, a partnership or vendor pitch, or something the policies do not cover. When the reply is complete and needs nothing from Dezmond, set it to false.`;
 
@@ -1185,6 +1217,8 @@ app.post('/api/process-email', async (req, res) => {
       status: 'drafted',
       needsHuman: needsHuman,
       flagReason: flagReason,
+      audience: (final.audience === 'other' || initial.audience === 'other') ? 'other'
+        : (final.audience === 'customer' ? 'customer' : guessAudience(subject, body, from)),
       drafts: drafts,
       rawBody: String(rawBody),
       thread: threadMsgs,
@@ -1209,6 +1243,8 @@ app.post('/api/process-email', async (req, res) => {
         const existing = await Lead.findOne({ threadId, status: { $ne: 'sent' } }).sort({ createdAt: -1 });
         if (existing) {
           delete leadDoc.createdAt;
+          // A bucket Dezmond chose by hand beats the model's guess.
+          if (existing.audienceSetBy === 'dashboard' && existing.audience) leadDoc.audience = existing.audience;
           await Lead.findByIdAndUpdate(existing._id, leadDoc);
           saved = await Lead.findById(existing._id).lean();
         }
@@ -1356,6 +1392,25 @@ app.post('/api/leads/:id/drafts', async (req, res) => {
     res.json({ ok: true, drafts });
   } catch (err) {
     console.error('Draft generation failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Dezmond moves a conversation between the customer list and "Other".
+app.post('/api/leads/:id/audience', async (req, res) => {
+  if (!checkToken(req, res)) return;
+  const audience = req.body && req.body.audience === 'other' ? 'other' : 'customer';
+  try {
+    if (dbReady && Lead) {
+      const updated = await Lead.findByIdAndUpdate(req.params.id, { audience, audienceSetBy: 'dashboard' }, { new: true }).lean();
+      if (!updated) return res.status(404).json({ error: 'Not found' });
+    } else {
+      const m = memoryLeads.find((l) => l._id === req.params.id);
+      if (!m) return res.status(404).json({ error: 'Not found' });
+      m.audience = audience; m.audienceSetBy = 'dashboard';
+    }
+    res.json({ ok: true, audience });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
@@ -1761,7 +1816,7 @@ app.get('/api/health', async (req, res) => {
   }
   res.json({
     status: 'ok',
-    version: 'v13.3 - tighter guess catcher (refund promises, all set, see them soon)',
+    version: 'v13.4 - non-customer emails sorted into Other',
     storage: dbReady ? 'mongodb (persistent)' : 'in-memory (resets on restart)',
     dbError: dbError || null,
     leadsStored: leadCount,
