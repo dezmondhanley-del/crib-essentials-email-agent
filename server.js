@@ -958,7 +958,9 @@ Set needsHuman to true whenever the STORE POLICIES say to flag the email for Dez
   text = text.replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim();
 
   try {
-    return JSON.parse(text);
+    const orderText = `${customerBlock || ''}${orderBlock}`;
+    const unshipped = !orderText.trim() || /not shipped|unfulfilled|partially/i.test(orderText);
+    return polishReply(JSON.parse(text), { unshipped });
   } catch (e) {
     return {
       type: 'general_support',
@@ -970,6 +972,49 @@ Set needsHuman to true whenever the STORE POLICIES say to flag the email for Dez
       flagReason: 'AI reply could not be parsed - read before sending',
     };
   }
+}
+
+// Last line of defence after the model answers. Two jobs:
+//  1. The sign-off is not optional, so add it when the model forgot.
+//  2. Catch the guesses the backtest kept finding - "arriving any day now",
+//     "on their way" for an unmade piece, invented refund timing - and make
+//     sure a human reads that reply before it goes anywhere.
+const GUESS_PATTERNS = [
+  [/\b(any day now|arriving (soon|shortly|any day)|should (arrive|be there|be arriving|see it) (soon|shortly|any day)|you should see it|just around the corner|won'?t be long now)\b/i, 'guesses at an arrival date'],
+  [/\b(on (its|their|the) way|still coming|in transit|heading (to|your way)|will follow shortly)\b/i, 'says something is "on the way" - confirm it has actually shipped'],
+  [/\b(refund|money|funds|credit)\b[^.]{0,80}\b\d+\s*(-|to)\s*\d+\s*(business\s+)?days\b/i, 'states a refund timeline'],
+  [/\b\d+\s*(-|to)\s*\d+\s*(business\s+)?days\b[^.]{0,80}\b(refund|back on your card|returned to)\b/i, 'states a refund timeline'],
+  [/\$\s?\d/, 'quotes a dollar amount'],
+  [/\bdezmond\b/i, 'names a staff member'],
+];
+
+function polishReply(parsed, ctx) {
+  if (!parsed || typeof parsed !== 'object') return parsed;
+  const unshipped = !ctx || ctx.unshipped !== false;
+  let reply = String(parsed.response || '').trim();
+  if (reply) {
+    // Normalise any near-miss sign-off, then make sure exactly one is there.
+    const signoff = /\n*\s*[-–—]?\s*(the\s+)?crib essentials(\s+team)?\s*[.!]?\s*$/i;
+    let before = null;
+    while (before !== reply) { before = reply; reply = reply.replace(signoff, '').trim(); }
+    reply = `${reply}\n\n- Crib Essentials`;
+  }
+  parsed.response = reply;
+
+  const body = reply.replace(/- Crib Essentials\s*$/, '');
+  const hits = [];
+  for (const [re, why] of GUESS_PATTERNS) {
+    // "On the way" is only a guess when something is still unshipped (or we
+    // have no order in front of us at all).
+    if (/on the way/.test(why) && !unshipped) continue;
+    if (re.test(body) && !hits.includes(why)) hits.push(why);
+  }
+  if (hits.length) {
+    parsed.needsHuman = true;
+    const note = `Read before sending - reply ${hits.join('; ')}.`;
+    parsed.flagReason = parsed.flagReason ? `${parsed.flagReason} ${note}` : note;
+  }
+  return parsed;
 }
 
 // Turn the one vetted reply into three tones Dezmond can pick from. This is a
@@ -1715,7 +1760,7 @@ app.get('/api/health', async (req, res) => {
   }
   res.json({
     status: 'ok',
-    version: 'v13.1 - chunked photo upload so big pictures come through',
+    version: 'v13.2 - sign-off guaranteed, guessy replies get flagged for review',
     storage: dbReady ? 'mongodb (persistent)' : 'in-memory (resets on restart)',
     dbError: dbError || null,
     leadsStored: leadCount,
