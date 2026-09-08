@@ -87,9 +87,30 @@ const attachmentSchema = new mongoose.Schema(
 attachmentSchema.index({ messageId: 1, attachmentId: 1 }, { unique: true });
 let Attachment = null;
 
+// Things Dezmond has to do after replying - "ship the Astro Mirror for
+// #2713" - shown on the Reminders tab and tied back to the conversation.
+const reminderSchema = new mongoose.Schema(
+  {
+    text: String,
+    dueAt: Date,
+    leadId: String,
+    threadId: String,
+    customerName: String,
+    email: String,
+    orderNumber: String,
+    done: { type: Boolean, default: false },
+    doneAt: Date,
+    createdAt: { type: Date, default: Date.now },
+  },
+  { versionKey: false }
+);
+let Reminder = null;
+const memoryReminders = [];
+
 if (MONGODB_URI) {
   Lead = mongoose.model('Lead', leadSchema);
   Attachment = mongoose.model('Attachment', attachmentSchema);
+  Reminder = mongoose.model('Reminder', reminderSchema);
   mongoose
     .connect(MONGODB_URI, { serverSelectionTimeoutMS: 8000 })
     .then(() => {
@@ -1415,6 +1436,86 @@ app.post('/api/leads/:id/audience', async (req, res) => {
   }
 });
 
+// ---- Reminders ----
+function cleanReminder(body) {
+  const text = String((body && body.text) || '').trim().slice(0, 300);
+  const due = body && body.dueAt ? new Date(body.dueAt) : null;
+  return {
+    text,
+    dueAt: due && !isNaN(due.getTime()) ? due : null,
+    leadId: body && body.leadId ? String(body.leadId) : null,
+    threadId: body && body.threadId ? String(body.threadId) : null,
+    customerName: body && body.customerName ? String(body.customerName).slice(0, 120) : null,
+    email: body && body.email ? String(body.email).slice(0, 200) : null,
+    orderNumber: body && body.orderNumber ? String(body.orderNumber).slice(0, 40) : null,
+  };
+}
+
+app.get('/api/reminders', async (req, res) => {
+  if (!readGate(req, res)) return;
+  try {
+    if (dbReady && Reminder) {
+      return res.json(await Reminder.find().sort({ done: 1, dueAt: 1, createdAt: -1 }).limit(500).lean());
+    }
+    res.json(memoryReminders);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/reminders', async (req, res) => {
+  if (!checkToken(req, res)) return;
+  const r = cleanReminder(req.body);
+  if (!r.text) return res.status(400).json({ error: 'Reminder text is required.' });
+  try {
+    if (dbReady && Reminder) {
+      const doc = await Reminder.create(r);
+      return res.json({ ok: true, reminder: doc.toObject() });
+    }
+    const withId = { ...r, _id: 'r' + Date.now(), done: false, createdAt: new Date() };
+    memoryReminders.unshift(withId);
+    res.json({ ok: true, reminder: withId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// One route for edits, ticking off, un-ticking and deleting - keeps the
+// dashboard code small.
+app.post('/api/reminders/:id', async (req, res) => {
+  if (!checkToken(req, res)) return;
+  const b = req.body || {};
+  try {
+    if (b.action === 'delete') {
+      if (dbReady && Reminder) await Reminder.findByIdAndDelete(req.params.id);
+      else {
+        const i = memoryReminders.findIndex((x) => x._id === req.params.id);
+        if (i >= 0) memoryReminders.splice(i, 1);
+      }
+      return res.json({ ok: true, deleted: true });
+    }
+    const patch = {};
+    if (b.action === 'done') { patch.done = true; patch.doneAt = new Date(); }
+    if (b.action === 'undo') { patch.done = false; patch.doneAt = null; }
+    if (typeof b.text === 'string' && b.text.trim()) patch.text = b.text.trim().slice(0, 300);
+    if (b.dueAt !== undefined) {
+      const d = b.dueAt ? new Date(b.dueAt) : null;
+      patch.dueAt = d && !isNaN(d.getTime()) ? d : null;
+    }
+    if (dbReady && Reminder) {
+      const doc = await Reminder.findByIdAndUpdate(req.params.id, patch, { new: true }).lean();
+      if (!doc) return res.status(404).json({ error: 'Not found' });
+      return res.json({ ok: true, reminder: doc });
+    }
+    const m = memoryReminders.find((x) => x._id === req.params.id);
+    if (!m) return res.status(404).json({ error: 'Not found' });
+    Object.assign(m, patch);
+    res.json({ ok: true, reminder: m });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/product-check', async (req, res) => {
   const term = req.query.q || 'mirror';
   const out = { term };
@@ -1816,7 +1917,7 @@ app.get('/api/health', async (req, res) => {
   }
   res.json({
     status: 'ok',
-    version: 'v13.4 - non-customer emails sorted into Other',
+    version: 'v13.5 - reminders tab',
     storage: dbReady ? 'mongodb (persistent)' : 'in-memory (resets on restart)',
     dbError: dbError || null,
     leadsStored: leadCount,
