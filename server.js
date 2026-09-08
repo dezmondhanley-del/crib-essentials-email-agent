@@ -1010,7 +1010,22 @@ app.post('/api/process-email', async (req, res) => {
   }
 });
 
+// Customer emails are private, so reading leads needs the same dashboard
+// token as sending. (If DASHBOARD_TOKEN is not set, reading stays open so the
+// dashboard still works while you set things up.)
+function readGate(req, res) {
+  const token = process.env.DASHBOARD_TOKEN;
+  if (!token) return true;
+  const supplied = req.get('x-dashboard-token') || req.query.token || '';
+  if (supplied !== token) {
+    res.status(401).json({ error: 'Dashboard token required.' });
+    return false;
+  }
+  return true;
+}
+
 app.get('/api/leads', async (req, res) => {
+  if (!readGate(req, res)) return;
   try {
     res.json(await listLeads());
   } catch (err) {
@@ -1019,6 +1034,7 @@ app.get('/api/leads', async (req, res) => {
 });
 
 app.get('/api/leads/:id', async (req, res) => {
+  if (!readGate(req, res)) return;
   try {
     const lead = await findLead(req.params.id);
     if (!lead) return res.status(404).json({ error: 'Not found' });
@@ -1167,7 +1183,7 @@ app.get('/api/health', async (req, res) => {
   }
   res.json({
     status: 'ok',
-    version: 'v12.1 - inbox: thread split, customer panel + cart, three draft tones (no-math rule), needsHuman flag',
+    version: 'v12.2 - inbox served from Render at /, token-gated leads, thread split, customer panel + cart, three draft tones',
     storage: dbReady ? 'mongodb (persistent)' : 'in-memory (resets on restart)',
     dbError: dbError || null,
     leadsStored: leadCount,
@@ -1185,4 +1201,19 @@ app.get('/api/health', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
+// The Inbox dashboard is served straight from this server, so updating it is
+// just replacing index.html next to server.js on GitHub - no Netlify step.
+const path = require('path');
+const fs = require('fs');
+app.get(['/', '/inbox'], (req, res) => {
+  const file = path.join(__dirname, 'index.html');
+  if (!fs.existsSync(file)) {
+    return res
+      .status(404)
+      .send('index.html is not in the repo yet. Upload it next to server.js on GitHub and Render will redeploy.');
+  }
+  res.set('Cache-Control', 'no-store');
+  res.sendFile(file);
+});
+
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
