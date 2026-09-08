@@ -38,6 +38,8 @@ const leadSchema = new mongoose.Schema(
     threadId: String,
     subject: String,
     status: { type: String, default: 'drafted' },
+    needsHuman: { type: Boolean, default: false },
+    flagReason: String,
     sentAt: Date,
     sentBody: String,
     createdAt: { type: Date, default: Date.now },
@@ -206,6 +208,7 @@ const PRODUCTS_BY_ID_QUERY = `
         totalInventory
         priceRangeV2 { minVariantPrice { amount currencyCode } }
         options { name values }
+        variants(first: 25) { edges { node { title price } } }
       }
     }
   }`;
@@ -223,7 +226,19 @@ function shapeProduct(node) {
     options: (node.options || [])
       .map((o) => `${o.name}: ${o.values.join(', ')}`)
       .join(' | '),
+    variantPrices: variantPriceList(node),
   };
+}
+
+// "3x5 ft $364 | 5x7 ft $849 | 6x9 ft $1310" - so the bot never attaches the
+// starting price to the wrong size.
+function variantPriceList(node) {
+  const edges = (node && node.variants && node.variants.edges) || [];
+  const parts = edges
+    .map((e) => e.node)
+    .filter((v) => v && v.price)
+    .map((v) => `${v.title === 'Default Title' ? 'standard' : v.title} $${v.price}`);
+  return parts.length > 1 ? parts.join(' | ') : '';
 }
 
 // Products are fetched by ID, not by name. A product can be renamed after an
@@ -258,6 +273,7 @@ const PRODUCT_QUERY = `
           totalInventory
           priceRangeV2 { minVariantPrice { amount currencyCode } }
           options { name values }
+          variants(first: 25) { edges { node { title price } } }
         }
       }
     }
@@ -283,6 +299,7 @@ async function searchProducts(term) {
       options: (e.node.options || [])
         .map((o) => `${o.name}: ${o.values.join(', ')}`)
         .join(' | '),
+      variantPrices: variantPriceList(e.node),
     }));
     productCache.set(key, { value: items, expires: Date.now() + PRODUCT_CACHE_MS });
     return items;
@@ -324,7 +341,8 @@ function formatProducts(products) {
   if (!products || products.length === 0) return '';
   const lines = products.map((p) => {
     const parts = [`- ${p.title}`];
-    if (p.price) parts.push(`  Price: $${p.price}`);
+    if (p.variantPrices) parts.push(`  Prices by option: ${p.variantPrices}`);
+    else if (p.price) parts.push(`  Price: $${p.price}`);
     if (p.options) parts.push(`  Options: ${p.options}`);
     if (typeof p.inventory === 'number') parts.push(`  Inventory on hand: ${p.inventory}`);
     if (p.description) parts.push(`  Product page says: ${p.description}`);
@@ -435,6 +453,7 @@ const ORDER_QUERY = `
       edges {
         node {
           name
+          email
           createdAt
           displayFinancialStatus
           displayFulfillmentStatus
@@ -445,6 +464,8 @@ const ORDER_QUERY = `
                 title
                 quantity
                 product { id title }
+                originalUnitPriceSet { shopMoney { amount } }
+                discountedTotalSet { shopMoney { amount } }
               }
             }
           }
@@ -479,15 +500,23 @@ async function getShopifyOrder(orderNumber) {
     return {
       orderNumber: raw,
       orderName: o.name,
+      email: String(o.email || '').toLowerCase(),
       status: o.displayFinancialStatus,
       fulfillmentStatus: o.displayFulfillmentStatus,
       createdAt: o.createdAt,
       total: o.totalPriceSet && o.totalPriceSet.shopMoney ? o.totalPriceSet.shopMoney.amount : null,
-      products: (o.lineItems.edges || []).map((le) => ({
-        name: le.node.title,
-        quantity: le.node.quantity,
-        productId: le.node.product ? le.node.product.id : null,
-      })),
+      products: (o.lineItems.edges || []).map((le) => {
+        const orig = le.node.originalUnitPriceSet && le.node.originalUnitPriceSet.shopMoney
+          ? Number(le.node.originalUnitPriceSet.shopMoney.amount) : null;
+        const paid = le.node.discountedTotalSet && le.node.discountedTotalSet.shopMoney
+          ? Number(le.node.discountedTotalSet.shopMoney.amount) : null;
+        return {
+          name: le.node.title,
+          quantity: le.node.quantity,
+          productId: le.node.product ? le.node.product.id : null,
+          freeGift: orig !== null && paid !== null && orig > 0 && paid === 0,
+        };
+      }),
       trackingInfo: tracking,
     };
   } catch (error) {
@@ -502,9 +531,16 @@ function daysSince(iso) {
   return Math.max(0, Math.floor(ms / 86400000));
 }
 
-async function askClaude(email, faqContext, shopifyData, productBlock, customerBlock) {
+async function askClaude(email, faqContext, shopifyData, productBlock, customerBlock, extra) {
+  extra = extra || {};
+  const today = new Date().toISOString().slice(0, 10);
   let orderBlock = '';
-  if (shopifyData) {
+  if (extra.orderMismatch) {
+    orderBlock = `
+ORDER NUMBER CHECK: the customer quoted order ${extra.orderMismatch}, but that order is not under the email address they wrote from. Do NOT reveal anything about that order - no status, no items, no tracking. Say you are pulling up order ${extra.orderMismatch} and will come right back, and set needsHuman to true so Dezmond can verify it is theirs.
+`;
+  }
+  if (shopifyData && !extra.orderMismatch) {
     const age = daysSince(shopifyData.createdAt);
     orderBlock = `
 CUSTOMER ORDER (live from Shopify):
@@ -513,7 +549,7 @@ Placed: ${shopifyData.createdAt}${age !== null ? ` (${age} days ago)` : ''}
 Payment status: ${shopifyData.status}
 Fulfillment status: ${shopifyData.fulfillmentStatus || 'unfulfilled'}
 Items on this order (the order cannot ship before its slowest item - each item's production time is on its product page below):
-${shopifyData.products.map((p) => `  - ${p.name} (qty ${p.quantity})`).join('\n')}
+${shopifyData.products.map((p) => `  - ${p.name} (qty ${p.quantity})${p.freeGift ? ' - FREE GIFT, $0, added automatically' : ''}`).join('\n')}
 Tracking: ${
       shopifyData.trackingInfo.length
         ? shopifyData.trackingInfo
@@ -525,6 +561,11 @@ Tracking: ${
   }
 
   const prompt = `You are a customer support agent for Crib Essentials, a handmade home decor brand in Dallas, TX selling wall art, mirrors, rugs, pillows and decorative pieces.
+
+TODAY'S DATE: ${today}
+
+EMAIL SUBJECT LINE: "${extra.subject || ''}"
+(An order number in the subject line counts exactly like one in the body - e.g. "Re: Order #2715 confirmed" means they are asking about order 2715.)
 
 CUSTOMER EMAIL:
 "${email}"
@@ -556,9 +597,13 @@ Respond with ONLY raw JSON, no markdown fences:
   "type": "order_inquiry" | "product_question" | "general_support",
   "summary": "one line on what the customer needs",
   "response": "the reply to send",
-  "extractedOrderNumber": "order number if mentioned, else null",
-  "productKeywords": ["product names or types mentioned, else empty array"]
-}`;
+  "extractedOrderNumber": "order number if mentioned in the body OR the subject line, else null",
+  "productKeywords": ["product names or types mentioned, else empty array"],
+  "needsHuman": true or false,
+  "flagReason": "if needsHuman is true, a few words on what Dezmond needs to do; else null"
+}
+
+Set needsHuman to true whenever the STORE POLICIES say to flag the email for Dezmond, whenever your reply says you will check on something and come back, whenever the customer is asking for a change you cannot make (address, cancellation, refund, swap, expedite), and whenever the email is a threat, a legal notice, a partnership or vendor pitch, or something the policies do not cover. When the reply is complete and needs nothing from Dezmond, set it to false.`;
 
   const message = await anthropic.messages.create({
     model: 'claude-sonnet-4-5',
@@ -578,6 +623,8 @@ Respond with ONLY raw JSON, no markdown fences:
       response: text,
       extractedOrderNumber: null,
       productKeywords: [],
+      needsHuman: true,
+      flagReason: 'AI reply could not be parsed - read before sending',
     };
   }
 }
@@ -594,11 +641,27 @@ app.post('/api/process-email', async (req, res) => {
     const customerBlock = formatCustomer(customer);
 
     // Pass 1: understand the email and pull out the order number / product hints.
-    const initial = await askClaude(body, faq, null, '', customerBlock);
+    const initial = await askClaude(body, faq, null, '', customerBlock, { subject });
 
     let shopifyData = null;
+    let orderMismatch = null;
     if (initial.extractedOrderNumber) {
       shopifyData = await getShopifyOrder(initial.extractedOrderNumber);
+    }
+
+    // Privacy: only show an order to the person it belongs to. Anyone can type
+    // a number into an email; the order's own email (or the sender's customer
+    // record) has to match before we reveal items or tracking.
+    if (shopifyData) {
+      const sender = String(from || '').trim().toLowerCase();
+      const ownsByEmail = shopifyData.email && sender && shopifyData.email === sender;
+      const ownsByRecord = customer && (customer.orders || []).some(
+        (o) => String(o.name).replace(/^#/, '') === String(shopifyData.orderNumber)
+      );
+      if (!ownsByEmail && !ownsByRecord) {
+        orderMismatch = shopifyData.orderNumber;
+        shopifyData = null;
+      }
     }
 
     const orderProductIds = shopifyData
@@ -618,9 +681,14 @@ app.post('/api/process-email', async (req, res) => {
 
     // Pass 2: answer again, now with the real order and product data in hand.
     const needsSecondPass = Boolean(shopifyData) || products.length > 0;
-    const final = needsSecondPass
-      ? await askClaude(body, faq, shopifyData, formatProducts(products), customerBlock)
+    const final = needsSecondPass || orderMismatch
+      ? await askClaude(body, faq, shopifyData, formatProducts(products), customerBlock, { subject, orderMismatch })
       : initial;
+
+    const needsHuman = Boolean(final.needsHuman) || Boolean(orderMismatch);
+    const flagReason = orderMismatch
+      ? `Customer quoted order ${orderMismatch} but it is not under their email - verify before sharing anything`
+      : (final.flagReason || null);
 
     const saved = await saveLead({
       email: from,
@@ -639,6 +707,8 @@ app.post('/api/process-email', async (req, res) => {
       threadId: threadId || null,
       subject: subject || null,
       status: 'drafted',
+      needsHuman: needsHuman,
+      flagReason: flagReason,
       createdAt: new Date(),
     });
 
@@ -806,6 +876,7 @@ app.get('/api/health', async (req, res) => {
   }
   res.json({
     status: 'ok',
+    version: 'v10 - needsHuman flag, order privacy check, variant prices, subject line, date',
     storage: dbReady ? 'mongodb (persistent)' : 'in-memory (resets on restart)',
     dbError: dbError || null,
     leadsStored: leadCount,
