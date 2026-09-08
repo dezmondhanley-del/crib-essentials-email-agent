@@ -155,9 +155,28 @@ Q: Can I order wholesale?
 A: Yes, email support@1cribessential.com for bulk pricing.
 `;
 
+// The FAQ lives in SUPPORT_FAQ.txt next to server.js so it can be updated by
+// a GitHub commit like everything else. The SUPPORT_FAQ env var still works
+// as a fallback if the file is missing; the built-in text is the last resort.
+const FAQ_FILE = require('path').join(__dirname, 'SUPPORT_FAQ.txt');
+let faqCache = { text: '', mtime: 0 };
 function getFaq() {
+  try {
+    const fs = require('fs');
+    const st = fs.statSync(FAQ_FILE);
+    if (st.mtimeMs !== faqCache.mtime) {
+      faqCache = { text: fs.readFileSync(FAQ_FILE, 'utf8'), mtime: st.mtimeMs };
+    }
+    if (faqCache.text.trim()) return faqCache.text;
+  } catch (e) {
+    /* no file - fall through */
+  }
   const custom = process.env.SUPPORT_FAQ;
   return custom && custom.trim() ? custom : BUILTIN_FAQ;
+}
+function faqSource() {
+  try { if (require('fs').existsSync(FAQ_FILE)) return 'SUPPORT_FAQ.txt in repo'; } catch (e) { /* ignore */ }
+  return process.env.SUPPORT_FAQ ? 'SUPPORT_FAQ env var' : 'built-in fallback';
 }
 
 async function getShopifyToken() {
@@ -833,6 +852,7 @@ RULES:
 - Never say an order has shipped unless its fulfillment status says so, and never invent tracking numbers, dates, prices or stock levels.
 - If they are asking you to CHANGE something - a shipping address, a cancellation, a refund, swapping an item - you cannot do it. Say a human will take care of it and confirm shortly. Never imply the change has been made. If an order they want changed has already shipped, say so honestly.
 - If they are a repeat customer, a brief word of thanks is welcome, but do not overdo it.
+- Never write the name "Dezmond" or any staff name in the reply. Speak as the brand: "we", "us", "our team", "I". Any mention of Dezmond in these instructions is about the internal flag, never something to tell the customer.
 - Warm, brief, 2-5 sentences. Write as a real person at the brand, not a bot.
 
 Respond with ONLY raw JSON, no markdown fences:
@@ -887,7 +907,7 @@ STRICT RULES:
 - Do NOT add any fact, number, timeline, price, policy, product name, apology for something not mentioned, or promise that is not in the approved reply. Do not remove a request the approved reply makes.
 - Do NOT do arithmetic on the approved reply's numbers: never add production and delivery times together, never convert business days into weeks, never say "roughly", "about", "in total", "all in", or "from order to arrival" with a new figure. Quote each number exactly as the approved reply states it, once.
 - Do NOT add reassurance the approved reply does not contain ("worth the wait", "you'll love it", "don't worry", "rest assured").
-- Do not say "I'm a real person", do not mention AI, and never use internal language ("the system", "our records", "flagging", "escalating").
+- Do not say "I'm a real person", do not mention AI, never name any staff member (no "Dezmond"), and never use internal language ("the system", "our records", "flagging", "escalating").
 - Write in the same language the approved reply is written in.
 - Use the customer's name only if the approved reply uses it.
 - Each rewrite must end with "- Crib Essentials" on its own line, with a blank line before it. Nothing after it.
@@ -1322,11 +1342,11 @@ app.get('/api/health', async (req, res) => {
   }
   res.json({
     status: 'ok',
-    version: 'v12.5 - edit shipping address + customer info from the inbox, per-item fulfillment, live /api/customer, thread split, three draft tones',
+    version: 'v12.6 - FAQ from repo file, never names staff in replies, edit address + customer info, per-item fulfillment, thread split, three draft tones',
     storage: dbReady ? 'mongodb (persistent)' : 'in-memory (resets on restart)',
     dbError: dbError || null,
     leadsStored: leadCount,
-    faqSource: process.env.SUPPORT_FAQ ? 'SUPPORT_FAQ env var' : 'built-in fallback',
+    faqSource: faqSource(),
     env: {
       CLAUDE_API_KEY: process.env.CLAUDE_API_KEY ? 'set' : 'MISSING',
       SHOPIFY_CLIENT_ID: SHOPIFY_CLIENT_ID ? 'set' : 'MISSING',
