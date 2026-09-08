@@ -40,6 +40,15 @@ const leadSchema = new mongoose.Schema(
     status: { type: String, default: 'drafted' },
     needsHuman: { type: Boolean, default: false },
     flagReason: String,
+    // Three ways of saying the same thing. drafts[0] is always the vetted
+    // original; the others are tone rewrites that may not add facts.
+    drafts: [{ tone: String, label: String, text: String }],
+    // Shopify Inbox-style panel: who they are, what they bought, what's in their cart.
+    customerProfile: Object,
+    cart: Object,
+    // The email exactly as it arrived, and the quoted history parsed into messages.
+    rawBody: String,
+    thread: [{ name: String, email: String, date: String, text: String, mine: Boolean }],
     sentAt: Date,
     sentBody: String,
     createdAt: { type: Date, default: Date.now },
@@ -358,7 +367,13 @@ const CUSTOMER_QUERY = `
         node {
           displayName
           email
+          phone
+          createdAt
           numberOfOrders
+          amountSpent { amount }
+          defaultAddress { city provinceCode countryCode }
+          tags
+          note
           orders(first: 5, sortKey: CREATED_AT, reverse: true) {
             edges {
               node {
@@ -367,7 +382,7 @@ const CUSTOMER_QUERY = `
                 displayFinancialStatus
                 displayFulfillmentStatus
                 totalPriceSet { shopMoney { amount } }
-                lineItems(first: 10) { edges { node { title quantity product { id } } } }
+                lineItems(first: 10) { edges { node { title variantTitle quantity product { id } } } }
                 fulfillments(first: 3) { trackingInfo { number url company } }
               }
             }
@@ -392,7 +407,15 @@ async function getCustomerContext(email) {
     return {
       name: c.displayName,
       email: c.email,
+      phone: c.phone || null,
+      since: c.createdAt || null,
       totalOrders: c.numberOfOrders,
+      totalSpent: c.amountSpent ? c.amountSpent.amount : null,
+      location: c.defaultAddress
+        ? [c.defaultAddress.city, c.defaultAddress.provinceCode, c.defaultAddress.countryCode].filter(Boolean).join(', ')
+        : null,
+      tags: c.tags || [],
+      note: c.note || null,
       orders: (c.orders.edges || []).map((oe) => {
         const o = oe.node;
         const tracking = [];
@@ -409,6 +432,7 @@ async function getCustomerContext(email) {
           total: o.totalPriceSet && o.totalPriceSet.shopMoney ? o.totalPriceSet.shopMoney.amount : null,
           items: (o.lineItems.edges || []).map((le) => ({
             title: le.node.title,
+            variant: le.node.variantTitle && le.node.variantTitle !== 'Default Title' ? le.node.variantTitle : null,
             quantity: le.node.quantity,
             productId: le.node.product ? le.node.product.id : null,
           })),
@@ -418,6 +442,53 @@ async function getCustomerContext(email) {
     };
   } catch (err) {
     console.error('Customer lookup failed:', err.message);
+    return null;
+  }
+}
+
+// "What's in their cart" - the open (not completed) checkout for this email,
+// the same thing Shopify Inbox shows. Dashboard only; the bot never sees it,
+// so it can never bring up a cart the customer did not mention.
+const CART_QUERY = `
+  query($q: String!) {
+    abandonedCheckouts(first: 3, query: $q, sortKey: CREATED_AT, reverse: true) {
+      nodes {
+        updatedAt
+        completedAt
+        abandonedCheckoutUrl
+        totalPriceSet { shopMoney { amount } }
+        customer { email }
+        lineItems(first: 10) {
+          nodes { title variantTitle quantity discountedTotalPriceSet { shopMoney { amount } } }
+        }
+      }
+    }
+  }`;
+
+async function getOpenCart(email) {
+  const clean = String(email || '').trim().toLowerCase();
+  if (!clean || clean.indexOf('@') === -1) return null;
+  try {
+    const data = await shopifyGraphQL(CART_QUERY, { q: `${clean} status:open` });
+    const nodes = (data.abandonedCheckouts && data.abandonedCheckouts.nodes) || [];
+    const mine = nodes.find(
+      (n) => !n.completedAt && n.customer && String(n.customer.email || '').toLowerCase() === clean
+    );
+    if (!mine) return null;
+    return {
+      updatedAt: mine.updatedAt,
+      url: mine.abandonedCheckoutUrl || null,
+      total: mine.totalPriceSet && mine.totalPriceSet.shopMoney ? mine.totalPriceSet.shopMoney.amount : null,
+      items: (mine.lineItems.nodes || []).map((li) => ({
+        title: li.title,
+        variant: li.variantTitle && li.variantTitle !== 'Default Title' ? li.variantTitle : null,
+        quantity: li.quantity,
+        price: li.discountedTotalPriceSet && li.discountedTotalPriceSet.shopMoney
+          ? li.discountedTotalPriceSet.shopMoney.amount : null,
+      })),
+    };
+  } catch (err) {
+    console.error('Cart lookup failed:', err.message);
     return null;
   }
 }
@@ -462,6 +533,7 @@ const ORDER_QUERY = `
             edges {
               node {
                 title
+                variantTitle
                 quantity
                 product { id title }
                 originalUnitPriceSet { shopMoney { amount } }
@@ -470,6 +542,7 @@ const ORDER_QUERY = `
             }
           }
           fulfillments(first: 5) { trackingInfo { number url company } }
+          shippingAddress { city provinceCode countryCode }
         }
       }
     }
@@ -512,12 +585,16 @@ async function getShopifyOrder(orderNumber) {
           ? Number(le.node.discountedTotalSet.shopMoney.amount) : null;
         return {
           name: le.node.title,
+          variant: le.node.variantTitle && le.node.variantTitle !== 'Default Title' ? le.node.variantTitle : null,
           quantity: le.node.quantity,
           productId: le.node.product ? le.node.product.id : null,
           freeGift: orig !== null && paid !== null && orig > 0 && paid === 0,
         };
       }),
       trackingInfo: tracking,
+      shipTo: o.shippingAddress
+        ? [o.shippingAddress.city, o.shippingAddress.provinceCode, o.shippingAddress.countryCode].filter(Boolean).join(', ')
+        : null,
     };
   } catch (error) {
     console.error('Shopify order lookup failed:', error.message);
@@ -530,6 +607,136 @@ function daysSince(iso) {
   const ms = Date.now() - new Date(iso).getTime();
   return Math.max(0, Math.floor(ms / 86400000));
 }
+
+// ---------------------------------------------------------------------------
+// Reply-thread splitting. Gmail sends the whole quoted history under a reply;
+// without this the bot answers last week's message instead of today's.
+// ---------------------------------------------------------------------------
+// Splits an email body into the customer's NEW message and the quoted history
+// underneath it, then breaks the history into individual messages so the
+// dashboard can show a conversation instead of a wall of ">" lines.
+
+const HEADER_RE = /^On .{3,200}?wrote:\s*$/;
+
+function normalizeLines(text) {
+  return String(text || '').replace(/\r\n?/g, '\n').split('\n');
+}
+
+// Gmail wraps long "On <date> <name> <email>" headers onto a second line that
+// just says "wrote:". Join those so each header is one line.
+function joinWrappedHeaders(lines) {
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^On .{3,200}$/.test(line) && !/wrote:\s*$/.test(line)) {
+      // Look ahead up to two lines for the rest of the header.
+      let joined = line.trim();
+      let used = 0;
+      for (let k = 1; k <= 2 && i + k < lines.length; k++) {
+        joined += ' ' + lines[i + k].trim();
+        used = k;
+        if (/wrote:\s*$/.test(joined)) break;
+      }
+      if (/wrote:\s*$/.test(joined) && joined.length < 260) {
+        out.push(joined.replace(/<\s+/, '<').replace(/\s+>/, '>'));
+        i += used;
+        continue;
+      }
+    }
+    out.push(line);
+  }
+  return out;
+}
+
+function isCutLine(line) {
+  const t = line.trim();
+  if (t.startsWith('>')) return true;
+  if (HEADER_RE.test(t)) return true;
+  if (/^-{2,}\s*Original Message\s*-{2,}$/i.test(t)) return true;
+  if (/^-{2,}\s*Forwarded message\s*-{2,}$/i.test(t)) return true;
+  if (/^_{10,}$/.test(t)) return true;
+  return false;
+}
+
+function splitQuoted(body) {
+  const lines = joinWrappedHeaders(normalizeLines(body));
+  let cut = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (isCutLine(lines[i])) {
+      // "From: x\nSent: y" Outlook style is handled by the underscore rule
+      // above; here we only need the first quote marker.
+      cut = i;
+      break;
+    }
+    // Outlook: "From: Name <email>" followed shortly by "Sent:"/"Date:"
+    if (/^From:\s/.test(lines[i]) && lines.slice(i + 1, i + 4).some((l) => /^(Sent|Date):\s/.test(l))) {
+      cut = i;
+      break;
+    }
+  }
+  if (cut === -1) {
+    return { newText: lines.join('\n').trim(), history: '', thread: [] };
+  }
+  const newText = lines.slice(0, cut).join('\n').trim();
+  const historyLines = lines.slice(cut);
+  const history = historyLines.join('\n').trim();
+  return { newText, history, thread: parseHistory(historyLines) };
+}
+
+function stripQuoteMarks(line) {
+  return line.replace(/^(\s*>)+\s?/, '');
+}
+
+function parseHeader(line) {
+  // "On Sat, Aug 29, 2026 at 11:01 AM Davaughn Paige <x@y.com> wrote:"
+  let rest = line.replace(/^On\s+/, '').replace(/\s*wrote:\s*$/, '');
+  let email = '';
+  const em = rest.match(/<([^>]+)>/);
+  if (em) {
+    email = em[1].trim().toLowerCase();
+    rest = rest.replace(em[0], '').trim();
+  }
+  // Date runs up to the time (or the year if there is no time); name is the rest.
+  const dm = rest.match(/^(.*?\d{1,2}:\d{2}\s?(?:AM|PM)?)\s+(.+)$/i) || rest.match(/^(.*?\d{4})\s+(.+)$/);
+  const date = dm ? dm[1].trim() : rest;
+  const name = dm ? dm[2].trim() : '';
+  return { date, name, email };
+}
+
+function parseHistory(historyLines) {
+  const cleaned = joinWrappedHeaders(historyLines.map(stripQuoteMarks));
+  const messages = [];
+  let current = null;
+  cleaned.forEach((line) => {
+    const t = line.trim();
+    if (HEADER_RE.test(t)) {
+      if (current) messages.push(current);
+      const h = parseHeader(t) || { date: '', name: '', email: '' };
+      current = { ...h, lines: [] };
+      return;
+    }
+    if (!current) {
+      // Text before the first header (e.g. Outlook-style) - keep as unknown.
+      current = { date: '', name: '', email: '', lines: [] };
+    }
+    current.lines.push(line);
+  });
+  if (current) messages.push(current);
+
+  return messages
+    .map((m) => {
+      let text = m.lines.join('\n')
+        .replace(/<https?:\/\/www\.google\.com\/maps[^>]*>/g, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+      // Drop the store's own signature block from its messages.
+      text = text.replace(/\n*Crib Essentials\s*\n@1cribessentials\s*$/i, '').trim();
+      const mine = /1cribessential/i.test(m.email) || /^crib essentials$/i.test(m.name);
+      return { name: m.name, email: m.email, date: m.date, text, mine };
+    })
+    .filter((m) => m.text);
+}
+
 
 async function askClaude(email, faqContext, shopifyData, productBlock, customerBlock, extra) {
   extra = extra || {};
@@ -567,9 +774,14 @@ TODAY'S DATE: ${today}
 EMAIL SUBJECT LINE: "${extra.subject || ''}"
 (An order number in the subject line counts exactly like one in the body - e.g. "Re: Order #2715 confirmed" means they are asking about order 2715.)
 
-CUSTOMER EMAIL:
+CUSTOMER'S NEW MESSAGE (this is what you are replying to - answer THIS):
 "${email}"
-
+${extra.history ? `
+EARLIER MESSAGES IN THIS THREAD (quoted history, oldest at the bottom). Context only. These were already dealt with - do NOT answer them again and do NOT confirm or repeat things from them. Use them only to understand what the new message refers to (which order, which address, what was already promised):
+<<<
+${extra.history}
+>>>
+` : ''}
 STORE POLICIES AND CURRENT NOTICES:
 ${faqContext}
 ${customerBlock || ''}${orderBlock}${productBlock}
@@ -629,19 +841,82 @@ Set needsHuman to true whenever the STORE POLICIES say to flag the email for Dez
   }
 }
 
+// Turn the one vetted reply into three tones Dezmond can pick from. This is a
+// rewrite only: the model may rephrase, expand or tighten, but it is told it
+// may not add a single fact, number, promise or policy that is not already in
+// the original. The original is always drafts[0] so there is a safe fallback.
+async function makeDraftVariants(original, customerEmail) {
+  const base = [{ tone: 'short', label: 'Short & warm', text: original }];
+  if (!original || !String(original).trim()) return base;
+
+  const prompt = `You are rewriting a customer support reply for Crib Essentials, a small handmade home decor brand in Dallas. Below is the APPROVED reply. Produce two rewrites of it in different tones.
+
+STRICT RULES:
+- Rewrite only. Every rewrite must say the same things as the approved reply - same facts, same numbers, same dates, same requests (for an order number, for photos, etc.), same "I'll check and come back" promises.
+- Do NOT add any fact, number, timeline, price, policy, product name, apology for something not mentioned, or promise that is not in the approved reply. Do not remove a request the approved reply makes.
+- Do not say "I'm a real person", do not mention AI, and never use internal language ("the system", "our records", "flagging", "escalating").
+- Write in the same language the approved reply is written in.
+- Use the customer's name only if the approved reply uses it.
+- Each rewrite must end with "- Crib Essentials" on its own line, with a blank line before it. Nothing after it.
+
+TONES:
+1. "detailed": a little longer and more thorough - explain the why behind each point in a friendly way, still human and warm, 4-7 sentences. No new facts, just fuller sentences.
+2. "formal": polished and professional, apologetic where the approved reply apologizes, no slang, no exclamation marks, 3-6 sentences.
+
+CUSTOMER'S EMAIL (for context only - do not answer anything the approved reply does not answer):
+"""
+${customerEmail}
+"""
+
+APPROVED REPLY:
+"""
+${original}
+"""
+
+Respond with ONLY this JSON, no markdown:
+{"detailed": "...", "formal": "..."}`;
+
+  try {
+    const message = await anthropic.messages.create({
+      model: 'claude-sonnet-4-5',
+      max_tokens: 1200,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    let text = message.content[0].text.trim();
+    text = text.replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim();
+    const parsed = JSON.parse(text);
+    const out = base.slice();
+    if (parsed.detailed && String(parsed.detailed).trim()) {
+      out.push({ tone: 'detailed', label: 'Detailed', text: String(parsed.detailed).trim() });
+    }
+    if (parsed.formal && String(parsed.formal).trim()) {
+      out.push({ tone: 'formal', label: 'Formal', text: String(parsed.formal).trim() });
+    }
+    return out;
+  } catch (err) {
+    console.error('Draft variants failed, keeping the single draft:', err.message);
+    return base;
+  }
+}
+
 app.post('/api/process-email', async (req, res) => {
   try {
-    const { from, customerName, body, subject, threadId, faqContext } = req.body;
-    if (!body) return res.status(400).json({ error: 'Missing body in request' });
+    const { from, customerName, body: rawBody, subject, threadId, faqContext } = req.body;
+    if (!rawBody) return res.status(400).json({ error: 'Missing body in request' });
+
+    // Only the new message is "the email"; the quoted history rides along as context.
+    const split = splitQuoted(rawBody);
+    const body = split.newText || String(rawBody).trim();
+    const history = split.history ? split.history.slice(0, 4000) : '';
 
     const faq = faqContext && String(faqContext).trim() ? faqContext : getFaq();
 
     // Look the sender up by email first - most people never quote an order number.
-    const customer = await getCustomerContext(from);
+    const [customer, cart] = await Promise.all([getCustomerContext(from), getOpenCart(from)]);
     const customerBlock = formatCustomer(customer);
 
     // Pass 1: understand the email and pull out the order number / product hints.
-    const initial = await askClaude(body, faq, null, '', customerBlock, { subject });
+    const initial = await askClaude(body, faq, null, '', customerBlock, { subject, history });
 
     let shopifyData = null;
     let orderMismatch = null;
@@ -682,13 +957,16 @@ app.post('/api/process-email', async (req, res) => {
     // Pass 2: answer again, now with the real order and product data in hand.
     const needsSecondPass = Boolean(shopifyData) || products.length > 0;
     const final = needsSecondPass || orderMismatch
-      ? await askClaude(body, faq, shopifyData, formatProducts(products), customerBlock, { subject, orderMismatch })
+      ? await askClaude(body, faq, shopifyData, formatProducts(products), customerBlock, { subject, orderMismatch, history })
       : initial;
 
     const needsHuman = Boolean(final.needsHuman) || Boolean(orderMismatch);
     const flagReason = orderMismatch
       ? `Customer quoted order ${orderMismatch} but it is not under their email - verify before sharing anything`
       : (final.flagReason || null);
+
+    // Three tones of the same vetted reply for the dashboard picker.
+    const drafts = await makeDraftVariants(final.response, body);
 
     const saved = await saveLead({
       email: from,
@@ -709,10 +987,21 @@ app.post('/api/process-email', async (req, res) => {
       status: 'drafted',
       needsHuman: needsHuman,
       flagReason: flagReason,
+      drafts: drafts,
+      rawBody: String(rawBody),
+      thread: split.thread,
+      customerProfile: customer
+        ? {
+            name: customer.name, email: customer.email, phone: customer.phone, since: customer.since,
+            totalOrders: customer.totalOrders, totalSpent: customer.totalSpent, location: customer.location,
+            tags: customer.tags, note: customer.note, orders: customer.orders,
+          }
+        : null,
+      cart: cart,
       createdAt: new Date(),
     });
 
-    res.json({ success: true, lead: saved, response: final.response });
+    res.json({ success: true, lead: saved, response: final.response, drafts: drafts });
   } catch (error) {
     console.error('Error processing email:', error);
     res.status(500).json({ error: error.message });
@@ -876,7 +1165,7 @@ app.get('/api/health', async (req, res) => {
   }
   res.json({
     status: 'ok',
-    version: 'v10 - needsHuman flag, order privacy check, variant prices, subject line, date',
+    version: 'v12 - inbox: thread split, customer panel + cart, three draft tones, needsHuman flag',
     storage: dbReady ? 'mongodb (persistent)' : 'in-memory (resets on restart)',
     dbError: dbError || null,
     leadsStored: leadCount,
