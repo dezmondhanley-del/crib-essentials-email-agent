@@ -742,6 +742,7 @@ function renderConvo(){
   var latest = c.latest;
   var profile = latest.customerProfile;
   var kind = profile ? (Number(profile.totalOrders) > 1 ? 'Returning customer' : (Number(profile.totalOrders) === 1 ? 'Customer' : 'New')) : 'Not in Shopify';
+
   var html = '<div class="chead"><button class="back" id="backBtn" title="Back to conversations">&#8249;</button><div class="' + avClass(c.email || c.key) + '">' + esc(initials(c.name, c.email)) + '</div>' +
     '<div class="who"><div class="nm">' + esc(c.name) + '</div><div class="em">' + esc(c.email) + (latest.subject ? ' · ' + esc(latest.subject) : '') + '</div></div>' +
     '<span class="badge">' + esc(c.other ? 'Not a customer' : kind) + '</span>' +
