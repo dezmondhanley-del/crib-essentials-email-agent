@@ -37,7 +37,7 @@
   .top .spacer{flex:1}
   .count{font-size:12px;color:#bdbdbd}
   .count b{color:#fff}
-  .app{display:grid;grid-template-columns:360px minmax(0,1fr) 340px;height:calc(100vh - 52px)}
+  .app{display:grid;grid-template-columns:372px minmax(0,1fr) 340px;height:calc(100vh - 52px)}
   .back,.custbtn{display:none}
   @media (max-width:1100px){
     .app{grid-template-columns:280px minmax(0,1fr)}
@@ -62,15 +62,21 @@
     .top .st span:last-child{display:none}
     .chead{padding:10px 12px;gap:8px}
     .chead .badge{display:none}
+    .chead .movebtn{margin-left:0;font-size:11px;padding:4px 8px;flex:none}
+    .chead .movebtn .full{display:none}
+    .chead .movebtn .short{display:inline}
+    .chead .who{flex:1 1 90px}
+    .chead .custbtn{margin-left:0;flex:none}
+    .chead .av{flex:none}
     .chead .nm{font-size:14px}
   }
 
   /* ---- conversation list ---- */
   .list{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;min-width:0}
-  .tabs{display:flex;gap:2px;padding:10px 8px 8px;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+  .tabs{display:flex;gap:1px;padding:10px 6px 8px;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
   .tabs::-webkit-scrollbar{display:none}
-  .tab{padding:5px 9px;border-radius:999px;border:1px solid transparent;background:transparent;font:inherit;font-size:12.5px;color:var(--muted);cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:5px;flex:none}
-  .tab .n{font-size:10.5px;background:var(--soft);color:var(--muted);border-radius:999px;padding:1px 5px;min-width:16px;text-align:center}
+  .tab{padding:5px 7px;border-radius:999px;border:1px solid transparent;background:transparent;font:inherit;font-size:11.5px;color:var(--muted);cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:5px;flex:none}
+  .tab .n{font-size:10px;background:var(--soft);color:var(--muted);border-radius:999px;padding:1px 4px;min-width:14px;text-align:center}
   .tab.on{background:var(--ink);color:#fff;font-weight:600}
   .tab.on .n{background:rgba(255,255,255,.2);color:#fff}
   .tab[data-f="needs"].on{background:var(--accent)}
@@ -90,6 +96,10 @@
   .av.c6{background:#e5f4f4;color:#1f6b6b}.av.c7{background:#f0ede3;color:#5c4d1a}
   .chip{display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;border-radius:999px;padding:2px 7px;vertical-align:middle;white-space:nowrap}
   .chip.needs{background:var(--accent-soft);color:var(--accent-ink)}
+  .chip.other{background:#ececec;color:#555}
+  .movebtn{padding:5px 11px;border:1px solid var(--line);border-radius:14px;background:transparent;font:inherit;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap}
+  .movebtn:hover{border-color:var(--ink);color:var(--ink)}
+  .movebtn .short{display:none}
   .chip.draft{background:var(--soft);color:var(--muted)}
   .chip.sent{background:var(--good-soft);color:var(--good)}
   .chip.photo{background:#e8eef7;color:#2f4f7d}
@@ -105,11 +115,12 @@
   .empty{padding:40px 20px;text-align:center;color:var(--faint);font-size:13px}
 
   /* ---- conversation ---- */
-  .convo{display:flex;flex-direction:column;min-height:0;background:var(--panel);border-right:1px solid var(--line)}
+  .convo{display:flex;flex-direction:column;min-height:0;min-width:0;background:var(--panel);border-right:1px solid var(--line)}
   .chead{padding:12px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px}
-  .chead .nm{font-weight:700;font-size:15px}
-  .chead .em{font-size:12px;color:var(--muted)}
-  .chead .badge{margin-left:auto;font-size:12px;color:var(--muted);border:1px solid var(--line);border-radius:14px;padding:3px 10px}
+  .chead .who{min-width:0;flex:1}
+  .chead .nm{font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .chead .em{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .chead .badge{flex:none;font-size:12px;color:var(--muted);border:1px solid var(--line);border-radius:14px;padding:3px 10px}
   .summary{margin:12px 20px 0;background:var(--accent-soft);border-left:3px solid var(--accent);border-radius:10px;padding:9px 12px;font-size:13px;color:var(--accent-ink)}
   .summary b{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;color:var(--accent-ink);opacity:.8}
   .msgs{flex:1;overflow-y:auto;padding:18px 20px;display:flex;flex-direction:column;gap:10px}
@@ -244,8 +255,9 @@
     <div class="tabs">
       <button class="tab on" data-f="all">All <span class="n" id="n-all">0</span></button>
       <button class="tab" data-f="needs">Needs you <span class="n" id="n-needs">0</span></button>
-      <button class="tab" data-f="open">Unanswered <span class="n" id="n-open">0</span></button>
+      <button class="tab" data-f="open">Open <span class="n" id="n-open">0</span></button>
       <button class="tab" data-f="sent">Replied <span class="n" id="n-sent">0</span></button>
+      <button class="tab" data-f="other" title="Vendors, collabs, newsletters - anyone who is not a customer">Other <span class="n" id="n-other">0</span></button>
     </div>
     <div class="search"><input id="q" type="search" placeholder="Search name, email, order #, subject…" autocomplete="off"></div>
     <div class="rows" id="rows"><div class="empty">Loading…</div></div>
@@ -286,6 +298,7 @@ function initials(name, email){
 function needsMe(l){ return !!l.needsHuman && l.status !== 'sent'; }
 function avClass(key){ var h = 0, k = String(key || ''); for(var i = 0; i < k.length; i++){ h = (h * 31 + k.charCodeAt(i)) >>> 0; } return 'av c' + (h % 8); }
 function statusChip(c){
+  if(c.other) return '<span class="chip other">Not a customer</span>';
   if(c.needs) return '<span class="chip needs">Needs you</span>';
   if(c.open) return '<span class="chip draft">Draft ready</span>';
   return '<span class="chip sent">Replied</span>';
@@ -360,25 +373,33 @@ function group(){
     c.latest = c.items[c.items.length - 1];
     c.name = (c.latest.customerProfile && c.latest.customerProfile.name) || c.latest.customerName || c.latest.email || 'Unknown';
     c.email = c.latest.email || '';
-    c.needs = c.items.some(needsMe);
+    c.other = c.latest.audience === 'other';
+    // Non-customers never count as "needs you" - they live in their own tab.
+    c.needs = !c.other && c.items.some(needsMe);
     c.open = c.latest.status !== 'sent';
     return c;
   });
 }
 
 function render(){
-  var needs = convos.filter(function(c){ return c.needs; }).length;
-  var open = convos.filter(function(c){ return c.open; }).length;
+  var customers = convos.filter(function(c){ return !c.other; });
+  var others = convos.length - customers.length;
+  var needs = customers.filter(function(c){ return c.needs; }).length;
+  var open = customers.filter(function(c){ return c.open; }).length;
   document.getElementById('c-needs').textContent = needs;
   document.getElementById('c-open').textContent = open;
-  document.getElementById('c-total').textContent = convos.length;
-  document.getElementById('n-all').textContent = convos.length;
+  document.getElementById('c-total').textContent = customers.length;
+  document.getElementById('n-all').textContent = customers.length;
   document.getElementById('n-needs').textContent = needs;
   document.getElementById('n-open').textContent = open;
-  document.getElementById('n-sent').textContent = convos.length - open;
+  document.getElementById('n-sent').textContent = customers.length - open;
+  document.getElementById('n-other').textContent = others;
 
   var q = query.trim().toLowerCase();
   var shown = convos.filter(function(c){
+    // "Other" is its own bucket; the customer tabs never show it and it never shows customers.
+    if(filter === 'other') return c.other && matches(c, q);
+    if(c.other) return false;
     if(filter === 'needs' && !c.needs) return false;
     if(filter === 'open' && !c.open) return false;
     if(filter === 'sent' && c.open) return false;
@@ -395,6 +416,7 @@ function render(){
       : filter === 'needs' ? 'Nothing needs you right now.'
       : filter === 'open' ? 'Everything has been answered.'
       : filter === 'sent' ? 'No replies sent yet. Send one and it shows up here.'
+      : filter === 'other' ? 'No vendor pitches, collabs or spam. Anything the bot decides is not a customer lands here.'
       : 'Nothing here.';
     rows.innerHTML = '<div class="empty">' + why + '</div>';
   } else {
@@ -463,8 +485,10 @@ function renderConvo(){
   var kind = profile ? (Number(profile.totalOrders) > 1 ? 'Returning customer' : (Number(profile.totalOrders) === 1 ? 'Customer' : 'New')) : 'Not in Shopify';
 
   var html = '<div class="chead"><button class="back" id="backBtn" title="Back to conversations">&#8249;</button><div class="' + avClass(c.email || c.key) + '">' + esc(initials(c.name, c.email)) + '</div>' +
-    '<div><div class="nm">' + esc(c.name) + '</div><div class="em">' + esc(c.email) + (latest.subject ? ' · ' + esc(latest.subject) : '') + '</div></div>' +
-    '<span class="badge">' + esc(kind) + '</span><button class="custbtn" id="custBtn">Customer</button></div>';
+    '<div class="who"><div class="nm">' + esc(c.name) + '</div><div class="em">' + esc(c.email) + (latest.subject ? ' · ' + esc(latest.subject) : '') + '</div></div>' +
+    '<span class="badge">' + esc(c.other ? 'Not a customer' : kind) + '</span>' +
+    '<button class="movebtn" id="moveBtn" title="' + (c.other ? 'Put this back with the customers' : 'Move this out of the customer list') + '"><span class="full">' + (c.other ? 'Move to customers' : 'Not a customer') + '</span><span class="short">' + (c.other ? 'To customers' : 'Not customer') + '</span></button>' +
+    '<button class="custbtn" id="custBtn">Customer</button></div>';
 
   if(latest.aiAnalysis) html += '<div class="summary"><b>Summary</b>' + esc(latest.aiAnalysis) + '</div>';
   html += '<div class="msgs" id="msgs">';
@@ -529,6 +553,8 @@ function renderConvo(){
   if(backBtn){ backBtn.onclick = function(){ document.querySelector('.app').classList.remove('showconvo'); }; }
   var custBtn = document.getElementById('custBtn');
   if(custBtn){ custBtn.onclick = function(){ document.querySelector('.app').classList.add('showcust'); }; }
+  var moveBtn = document.getElementById('moveBtn');
+  if(moveBtn){ moveBtn.onclick = function(){ setAudience(c, c.other ? 'customer' : 'other', moveBtn); }; }
 
   var moreBtn = document.getElementById('moreBtn');
   if(moreBtn){ moreBtn.onclick = function(){ historyOpen[c.key] = !historyOpen[c.key]; renderConvo(); }; }
@@ -878,6 +904,31 @@ function askToken(message){
     load();
   };
   setTimeout(function(){ var i = document.getElementById('tokInput'); if(i) i.focus(); }, 50);
+}
+
+// Flip a conversation between the customer list and "Other". Every email in
+// the thread moves together so it does not reappear under a different tab.
+async function setAudience(c, audience, btn){
+  var token = getToken();
+  if(!token){ askToken('Enter your dashboard token to move conversations.'); return; }
+  if(btn){ btn.disabled = true; btn.textContent = 'Moving…'; }
+  try{
+    for(var i = 0; i < c.items.length; i++){
+      var r = await fetch(API_URL + '/api/leads/' + encodeURIComponent(c.items[i]._id) + '/audience', {
+        method:'POST', headers:{ 'Content-Type':'application/json', 'x-dashboard-token': token },
+        body: JSON.stringify({ audience: audience })
+      });
+      if(!r.ok){ var d = await r.json().catch(function(){ return {}; }); throw new Error(d.error || ('Server returned ' + r.status)); }
+      c.items[i].audience = audience;
+    }
+    // Follow the conversation to its new tab so it does not vanish from view.
+    filter = audience === 'other' ? 'other' : 'all';
+    Array.prototype.forEach.call(document.querySelectorAll('.tab'), function(x){ x.classList.toggle('on', x.getAttribute('data-f') === filter); });
+    group(); render();
+  }catch(err){
+    if(btn){ btn.disabled = false; btn.textContent = 'Failed - try again'; }
+    window.alert('Could not move it: ' + err.message);
+  }
 }
 
 async function sendReply(lead, btn){
