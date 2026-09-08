@@ -191,6 +191,16 @@ function guessAudience(subject, body, from) {
   if (OTHER_PATTERNS.some((re) => re.test(text))) return 'other';
   return 'customer';
 }
+// Same customer message? Compare the real send time when both sides have it,
+// otherwise the opening of the text.
+function sameMessage(a, b) {
+  const ta = a && a.receivedAt ? new Date(a.receivedAt).getTime() : NaN;
+  const tb = b && b.receivedAt ? new Date(b.receivedAt).getTime() : NaN;
+  if (!isNaN(ta) && !isNaN(tb)) return Math.abs(ta - tb) < 120000;
+  const norm = (t) => String(t || '').toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 120);
+  const qa = norm(a && a.question), qb = norm(b && b.question);
+  return Boolean(qa) && qa === qb;
+}
 function withAudience(lead) {
   if (!lead) return lead;
   if (!lead.audience) lead.audience = guessAudience(lead.subject, lead.question, lead.email);
@@ -1268,13 +1278,34 @@ app.post('/api/process-email', async (req, res) => {
     let saved = null;
     if (replace && threadId && dbReady && Lead && !isTestSender(from)) {
       try {
-        const existing = await Lead.findOne({ threadId, status: { $ne: 'sent' } }).sort({ createdAt: -1 });
-        if (existing) {
-          delete leadDoc.createdAt;
-          // A bucket Dezmond chose by hand beats the model's guess.
-          if (existing.audienceSetBy === 'dashboard' && existing.audience) leadDoc.audience = existing.audience;
-          await Lead.findByIdAndUpdate(existing._id, leadDoc);
-          saved = await Lead.findById(existing._id).lean();
+        const all = await Lead.find({ threadId }).sort({ createdAt: -1 });
+        const answered = all.find((l) => l.status === 'sent' && sameMessage(l, leadDoc));
+        if (answered) {
+          // Dezmond already replied to this exact message. Refresh the context
+          // (thread, photos, real date, customer data) but leave his reply and
+          // the sent status alone - and drop any unsent copies of the same
+          // message so the conversation does not reopen.
+          const patch = {
+            thread: leadDoc.thread, attachments: leadDoc.attachments, receivedAt: leadDoc.receivedAt,
+            customerProfile: leadDoc.customerProfile, cart: leadDoc.cart, customerOrders: leadDoc.customerOrders,
+            customerTotalOrders: leadDoc.customerTotalOrders, shopifyOrderData: leadDoc.shopifyOrderData,
+            aiAnalysis: leadDoc.aiAnalysis, subject: leadDoc.subject, customerName: leadDoc.customerName,
+            orderNumber: leadDoc.orderNumber || answered.orderNumber,
+          };
+          if (answered.audienceSetBy !== 'dashboard') patch.audience = leadDoc.audience;
+          await Lead.findByIdAndUpdate(answered._id, patch);
+          const dupes = all.filter((l) => l.status !== 'sent' && sameMessage(l, leadDoc)).map((l) => l._id);
+          if (dupes.length) await Lead.deleteMany({ _id: { $in: dupes } });
+          saved = await Lead.findById(answered._id).lean();
+        } else {
+          const existing = all.find((l) => l.status !== 'sent');
+          if (existing) {
+            delete leadDoc.createdAt;
+            // A bucket Dezmond chose by hand beats the model's guess.
+            if (existing.audienceSetBy === 'dashboard' && existing.audience) leadDoc.audience = existing.audience;
+            await Lead.findByIdAndUpdate(existing._id, leadDoc);
+            saved = await Lead.findById(existing._id).lean();
+          }
         }
       } catch (err) {
         console.error('Replace-by-thread failed, saving fresh:', err.message);
@@ -1925,7 +1956,7 @@ app.get('/api/health', async (req, res) => {
   }
   res.json({
     status: 'ok',
-    version: 'v13.6 - real sent dates on every message',
+    version: 'v13.7 - re-imports never reopen a conversation you already answered',
     storage: dbReady ? 'mongodb (persistent)' : 'in-memory (resets on restart)',
     dbError: dbError || null,
     leadsStored: leadCount,
