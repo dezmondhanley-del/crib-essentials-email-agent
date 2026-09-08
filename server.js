@@ -378,12 +378,18 @@ const CUSTOMER_QUERY = `
             edges {
               node {
                 name
+                legacyResourceId
                 createdAt
                 displayFinancialStatus
                 displayFulfillmentStatus
                 totalPriceSet { shopMoney { amount } }
-                lineItems(first: 10) { edges { node { title variantTitle quantity product { id } } } }
-                fulfillments(first: 3) { trackingInfo { number url company } }
+                lineItems(first: 10) { edges { node { title variantTitle quantity unfulfilledQuantity product { id } } } }
+                fulfillments(first: 5) {
+                  displayStatus
+                  createdAt
+                  trackingInfo { number url company }
+                  fulfillmentLineItems(first: 10) { nodes { quantity lineItem { title } } }
+                }
               }
             }
           }
@@ -426,6 +432,9 @@ async function getCustomerContext(email) {
         });
         return {
           name: o.name,
+          adminUrl: o.legacyResourceId
+            ? `https://${SHOPIFY_STORE}/admin/orders/${o.legacyResourceId}`
+            : null,
           createdAt: o.createdAt,
           financial: o.displayFinancialStatus,
           fulfillment: o.displayFulfillmentStatus,
@@ -434,9 +443,20 @@ async function getCustomerContext(email) {
             title: le.node.title,
             variant: le.node.variantTitle && le.node.variantTitle !== 'Default Title' ? le.node.variantTitle : null,
             quantity: le.node.quantity,
+            unfulfilled: typeof le.node.unfulfilledQuantity === 'number' ? le.node.unfulfilledQuantity : null,
             productId: le.node.product ? le.node.product.id : null,
           })),
           tracking: tracking,
+          // One entry per shipment: what went out, when, and its tracking.
+          shipments: (o.fulfillments || []).map((f) => ({
+            status: f.displayStatus || null,
+            createdAt: f.createdAt || null,
+            tracking: (f.trackingInfo || []).map((t) => ({ number: t.number, url: t.url, company: t.company })),
+            items: ((f.fulfillmentLineItems && f.fulfillmentLineItems.nodes) || []).map((n) => ({
+              title: n.lineItem ? n.lineItem.title : '',
+              quantity: n.quantity,
+            })),
+          })),
         };
       }),
     };
@@ -1208,7 +1228,7 @@ app.get('/api/health', async (req, res) => {
   }
   res.json({
     status: 'ok',
-    version: 'v12.3 - live /api/customer for the panel, inbox served from Render, token-gated leads, thread split, three draft tones',
+    version: 'v12.4 - per-item fulfillment + shipments on orders, live /api/customer, inbox served from Render, thread split, three draft tones',
     storage: dbReady ? 'mongodb (persistent)' : 'in-memory (resets on restart)',
     dbError: dbError || null,
     leadsStored: leadCount,
