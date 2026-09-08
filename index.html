@@ -129,11 +129,37 @@
   .ord .it{font-size:13px;color:var(--muted);margin-top:6px}
   .ord .it div{display:flex;justify-content:space-between;gap:8px;padding:2px 0}
   .link{background:none;border:0;padding:0;font:inherit;font-size:13px;color:var(--ink);text-decoration:underline;cursor:pointer}
+  .ord.click{cursor:pointer;border-radius:10px;padding:10px;margin:0 -10px}
+  .ord.click:hover{background:#fafafa}
+  .ord .top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .ord .chev{color:var(--faint);font-size:12px}
+  .ord .detail{display:none;margin-top:8px}
+  .ord.open .detail{display:block}
+  .ip{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:600;margin-left:6px;vertical-align:middle;white-space:nowrap}
+  .ip.no{background:#1a1a1a;color:#fff}
+  .ip.yes{background:#e6e6e6;color:#1a1a1a}
+  .ip.part{background:#fff;color:#1a1a1a;border:1px solid #1a1a1a}
+  .ship{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-top:8px;font-size:13px}
+  .ship .sh{font-weight:600;display:flex;justify-content:space-between;gap:8px}
+  .ship .si{color:var(--muted);margin-top:2px}
+  .ord .openlink{display:inline-block;margin-top:8px;font-size:12px}
   .cart{background:var(--soft);border-radius:10px;padding:10px 12px;font-size:13px}
   .cart div{display:flex;justify-content:space-between;gap:8px;padding:2px 0}
   .cart .tot{border-top:1px solid #dcdcdc;margin-top:4px;padding-top:6px;font-weight:600}
   .cust .none{color:var(--faint);font-size:13px}
   .err{background:var(--soft);color:var(--ink);padding:10px 14px;font-size:13px;border-bottom:1px solid var(--line)}
+  .edit{background:none;border:0;padding:0;font:inherit;font-size:12px;color:var(--muted);text-decoration:underline;cursor:pointer;margin-left:8px}
+  .form{border:1px solid var(--line);border-radius:10px;padding:10px;margin-top:8px;background:#fafafa}
+  .form label{display:block;font-size:11px;color:var(--muted);margin:6px 0 2px;text-transform:uppercase;letter-spacing:.04em}
+  .form input,.form textarea{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:7px;font:inherit;background:#fff;color:var(--ink)}
+  .form textarea{min-height:56px;resize:vertical}
+  .form .two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .form .three{display:grid;grid-template-columns:2fr 1fr 1fr;gap:8px}
+  .form .acts{display:flex;gap:8px;align-items:center;margin-top:10px}
+  .form .btn{padding:7px 13px;font-size:13px}
+  .form .msg{font-size:12px;color:var(--muted)}
+  .form .msg.bad{color:#1a1a1a;font-weight:600}
+  .addr{font-size:13px;color:var(--muted);white-space:pre-line;margin-top:6px}
   .tokform{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
   .tokform input{flex:1;min-width:220px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;background:#fff}
 </style>
@@ -424,7 +450,16 @@ function renderCustomer(){
     if(ccl){ ccl.onclick = function(){ document.querySelector('.app').classList.remove('showcust'); }; }
     return;
   }
-  var html = '<button class="closecust" id="closeCust">&#8249; Back to conversation</button><div class="nm">' + esc((p && p.name) || c.name) + '</div>';
+  var html = '<button class="closecust" id="closeCust">&#8249; Back to conversation</button><div class="nm">' + esc((p && p.name) || c.name) +
+    (p && p.id ? '<button class="edit" id="editCust">' + (editing.cust ? 'Cancel' : 'Edit') + '</button>' : '') + '</div>';
+  if(p && p.id && editing.cust){
+    html += '<div class="form" id="custForm">' +
+      '<div class="two"><div><label>First name</label><input id="cf-first" value="' + esc(p.firstName || '') + '"></div>' +
+      '<div><label>Last name</label><input id="cf-last" value="' + esc(p.lastName || '') + '"></div></div>' +
+      '<label>Phone</label><input id="cf-phone" value="' + esc(p.phone || '') + '" placeholder="+1 214 555 0100">' +
+      '<label>Note (only you see this)</label><textarea id="cf-note">' + esc(p.note || '') + '</textarea>' +
+      '<div class="acts"><button class="btn" id="cf-save">Save to Shopify</button><span class="msg" id="cf-msg"></span></div></div>';
+  }
   if(!p){
     html += '<div class="kind">Not found in Shopify</div>' +
       '<div class="fact">' + ICON.mail + '<div class="v">' + esc(c.email) + '</div></div>' +
@@ -456,15 +491,53 @@ function renderCustomer(){
   if(orders.length){
     var all = !!showAllOrders[c.key];
     html += '<h4>' + (all ? 'Orders' : 'Last order placed') + '</h4>';
-    (all ? orders : orders.slice(0, 1)).forEach(function(o){
-      html += '<div class="ord"><div class="on">' + esc(o.name) + '</div>' +
+    (all ? orders : orders.slice(0, 1)).forEach(function(o, oi){
+      var open = !!openOrders[o.name];
+      html += '<div class="ord click' + (open ? ' open' : '') + '" data-o="' + esc(o.name) + '">' +
+        '<div class="top"><span class="on">' + esc(o.name) + '</span><span><span class="on">$' + esc(money(o.total)) + '</span> <span class="chev">' + (open ? '&#9652;' : '&#9662;') + '</span></span></div>' +
         '<div class="st">' + esc(pretty(o.financial)) + '<span class="sep">•</span>' + esc(pretty(o.fulfillment)) + '</div>' +
-        '<div class="mt">$' + esc(money(o.total)) + '<span class="sep">•</span>' + esc(o.createdAt ? new Date(o.createdAt).toLocaleString([], {month:'long', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit'}) : '') + '</div>' +
+        '<div class="mt">' + esc(o.createdAt ? new Date(o.createdAt).toLocaleString([], {month:'long', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit'}) : '') + '</div>' +
         '<div class="it">' + (o.items || []).map(function(i){
-          return '<div><span>' + esc(i.title) + (i.variant ? ' · ' + esc(i.variant) : '') + '</span><span>× ' + esc(i.quantity) + '</span></div>'; }).join('') + '</div>' +
-        (o.tracking || []).map(function(t){
-          return '<div class="mt">' + esc(t.company || 'Tracking') + ' ' + esc(t.number || '') + (t.url ? ' · <a href="' + esc(t.url) + '" target="_blank" rel="noopener">track</a>' : '') + '</div>'; }).join('') +
-        '</div>';
+          return '<div><span>' + esc(i.title) + (i.variant ? ' · ' + esc(i.variant) : '') + itemPill(i) + '</span><span>× ' + esc(i.quantity) + '</span></div>'; }).join('') + '</div>';
+      // Expanded: what has shipped, what has not, and a link into Shopify.
+      html += '<div class="detail">';
+      var ships = o.shipments || [];
+      if(ships.length){
+        ships.forEach(function(sh, si){
+          html += '<div class="ship"><div class="sh"><span>Shipment ' + (si + 1) + (sh.status ? ' · ' + esc(pretty(sh.status)) : '') + '</span><span>' + esc(sh.createdAt ? new Date(sh.createdAt).toLocaleDateString([], {month:'short', day:'numeric'}) : '') + '</span></div>' +
+            '<div class="si">' + (sh.items || []).map(function(i){ return esc(i.title) + ' × ' + esc(i.quantity); }).join(', ') + '</div>' +
+            (sh.tracking || []).map(function(t){ return '<div class="si">' + esc(t.company || 'Tracking') + ' ' + esc(t.number || '') + (t.url ? ' · <a href="' + esc(t.url) + '" target="_blank" rel="noopener">track</a>' : '') + '</div>'; }).join('') +
+            '</div>';
+        });
+      } else if((o.tracking || []).length){
+        html += (o.tracking || []).map(function(t){ return '<div class="mt">' + esc(t.company || 'Tracking') + ' ' + esc(t.number || '') + (t.url ? ' · <a href="' + esc(t.url) + '" target="_blank" rel="noopener">track</a>' : '') + '</div>'; }).join('');
+      } else {
+        html += '<div class="mt">Nothing has shipped on this order yet.</div>';
+      }
+      var waiting = (o.items || []).filter(function(i){ return i.unfulfilled > 0; });
+      var a = o.shippingAddress;
+      var canEdit = !!o.gid && String(o.fulfillment || '').toUpperCase() !== 'FULFILLED';
+      if(a || canEdit){
+        html += '<div class="mt" style="margin-top:8px"><b style="color:var(--ink)">Ships to</b>' + (canEdit ? '<button class="edit" data-edit="' + esc(o.name) + '">' + (editing.addr === o.name ? 'Cancel' : 'Edit address') + '</button>' : '') + '</div>';
+        if(a) html += '<div class="addr">' + esc(fmtAddr(a)) + '</div>';
+        if(editing.addr === o.name){
+          a = a || {};
+          html += '<div class="form" data-addrform="' + esc(o.name) + '">' +
+            '<div class="two"><div><label>First name</label><input class="af" data-k="firstName" value="' + esc(a.firstName || '') + '"></div>' +
+            '<div><label>Last name</label><input class="af" data-k="lastName" value="' + esc(a.lastName || '') + '"></div></div>' +
+            '<label>Address</label><input class="af" data-k="address1" value="' + esc(a.address1 || '') + '">' +
+            '<label>Apt / unit</label><input class="af" data-k="address2" value="' + esc(a.address2 || '') + '">' +
+            '<div class="three"><div><label>City</label><input class="af" data-k="city" value="' + esc(a.city || '') + '"></div>' +
+            '<div><label>State</label><input class="af" data-k="provinceCode" value="' + esc(a.provinceCode || '') + '" placeholder="TX"></div>' +
+            '<div><label>ZIP</label><input class="af" data-k="zip" value="' + esc(a.zip || '') + '"></div></div>' +
+            '<div class="two"><div><label>Country</label><input class="af" data-k="countryCode" value="' + esc(a.countryCode || 'US') + '"></div>' +
+            '<div><label>Phone</label><input class="af" data-k="phone" value="' + esc(a.phone || '') + '"></div></div>' +
+            '<div class="acts"><button class="btn" data-savaddr="' + esc(o.gid) + '" data-oname="' + esc(o.name) + '">Save to Shopify</button><span class="msg" data-amsg="' + esc(o.name) + '"></span></div></div>';
+        }
+      }
+      if(waiting.length) html += '<div class="mt" style="margin-top:8px">Still to ship: ' + waiting.map(function(i){ return esc(i.title) + (i.unfulfilled < i.quantity ? ' (' + i.unfulfilled + ' of ' + i.quantity + ')' : ''); }).join(', ') + '</div>';
+      if(o.adminUrl) html += '<a class="openlink" href="' + esc(o.adminUrl) + '" target="_blank" rel="noopener">Open in Shopify &#8599;</a>';
+      html += '</div></div>';
     });
     if(orders.length > 1) html += '<button class="link" id="viewAll">' + (all ? 'Show less' : 'View all') + '</button>';
   } else {
@@ -475,6 +548,80 @@ function renderCustomer(){
   if(cc){ cc.onclick = function(){ document.querySelector('.app').classList.remove('showcust'); }; }
   var va = document.getElementById('viewAll');
   if(va) va.onclick = function(){ showAllOrders[c.key] = !showAllOrders[c.key]; renderCustomer(); };
+  Array.prototype.forEach.call(el.querySelectorAll('.ord.click'), function(card){
+    card.onclick = function(e){
+      // Links, buttons and form fields inside the card do their own thing.
+      if(e.target.closest('a, button, input, textarea, label, .form')) return;
+      var k = card.getAttribute('data-o');
+      openOrders[k] = !openOrders[k];
+      renderCustomer();
+    };
+  });
+  var ec = document.getElementById('editCust');
+  if(ec){ ec.onclick = function(){ editing.cust = !editing.cust; renderCustomer(); }; }
+  var cs = document.getElementById('cf-save');
+  if(cs){ cs.onclick = function(){ saveCustomer(p, c); }; }
+  Array.prototype.forEach.call(el.querySelectorAll('[data-edit]'), function(b){
+    b.onclick = function(e){ e.stopPropagation(); var n = b.getAttribute('data-edit'); editing.addr = (editing.addr === n) ? null : n; openOrders[n] = true; renderCustomer(); };
+  });
+  Array.prototype.forEach.call(el.querySelectorAll('[data-savaddr]'), function(b){
+    b.onclick = function(e){ e.stopPropagation(); saveAddress(b.getAttribute('data-savaddr'), b.getAttribute('data-oname'), c, b); };
+  });
+}
+
+var editing = { cust: false, addr: null };
+function fmtAddr(a){
+  if(!a) return '';
+  var name = [a.firstName, a.lastName].filter(Boolean).join(' ');
+  var l3 = [a.city, [a.provinceCode, a.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+  return [name, a.address1, a.address2, l3, a.countryCode !== 'US' ? a.countryCode : '', a.phone].filter(Boolean).join('\n');
+}
+function refreshCustomer(c){
+  delete liveCustomer[String(c.email || '').toLowerCase()];
+  renderCustomer();
+}
+async function postJson(url, body){
+  var r = await fetch(API_URL + url, { method:'POST', headers:{ 'Content-Type':'application/json', 'x-dashboard-token': getToken() }, body: JSON.stringify(body) });
+  var d = await r.json().catch(function(){ return {}; });
+  if(!r.ok) throw new Error(d.error || ('Server returned ' + r.status));
+  return d;
+}
+async function saveCustomer(p, c){
+  var msg = document.getElementById('cf-msg'), btn = document.getElementById('cf-save');
+  msg.className = 'msg'; msg.textContent = 'Saving…'; btn.disabled = true;
+  try{
+    await postJson('/api/customer/update', {
+      customerId: p.id,
+      firstName: document.getElementById('cf-first').value,
+      lastName: document.getElementById('cf-last').value,
+      phone: document.getElementById('cf-phone').value,
+      note: document.getElementById('cf-note').value
+    });
+    editing.cust = false;
+    refreshCustomer(c);
+  }catch(err){ msg.className = 'msg bad'; msg.textContent = err.message; btn.disabled = false; }
+}
+async function saveAddress(gid, oname, c, btn){
+  var form = document.querySelector('[data-addrform="' + oname.replace(/"/g, '') + '"]');
+  var msg = document.querySelector('[data-amsg="' + oname.replace(/"/g, '') + '"]');
+  var address = {};
+  Array.prototype.forEach.call(form.querySelectorAll('.af'), function(i){ address[i.getAttribute('data-k')] = i.value; });
+  if(!window.confirm('Update the shipping address on ' + oname + ' in Shopify?')) return;
+  msg.className = 'msg'; msg.textContent = 'Saving…'; btn.disabled = true;
+  try{
+    await postJson('/api/orders/address', { orderId: gid, address: address });
+    editing.addr = null;
+    refreshCustomer(c);
+  }catch(err){ msg.className = 'msg bad'; msg.textContent = err.message; btn.disabled = false; }
+}
+
+var openOrders = {};
+// Per-line-item fulfillment pill, from Shopify's unfulfilledQuantity.
+function itemPill(i){
+  if(i.unfulfilled == null) return '';
+  if(i.unfulfilled === 0) return '<span class="ip yes">Fulfilled</span>';
+  if(i.unfulfilled >= i.quantity) return '<span class="ip no">Unfulfilled</span>';
+  return '<span class="ip part">' + (i.quantity - i.unfulfilled) + ' of ' + i.quantity + ' shipped</span>';
 }
 
 // Token is stored in this browser once entered. No window.prompt - some
