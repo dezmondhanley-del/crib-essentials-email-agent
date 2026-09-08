@@ -854,6 +854,8 @@ async function makeDraftVariants(original, customerEmail) {
 STRICT RULES:
 - Rewrite only. Every rewrite must say the same things as the approved reply - same facts, same numbers, same dates, same requests (for an order number, for photos, etc.), same "I'll check and come back" promises.
 - Do NOT add any fact, number, timeline, price, policy, product name, apology for something not mentioned, or promise that is not in the approved reply. Do not remove a request the approved reply makes.
+- Do NOT do arithmetic on the approved reply's numbers: never add production and delivery times together, never convert business days into weeks, never say "roughly", "about", "in total", "all in", or "from order to arrival" with a new figure. Quote each number exactly as the approved reply states it, once.
+- Do NOT add reassurance the approved reply does not contain ("worth the wait", "you'll love it", "don't worry", "rest assured").
 - Do not say "I'm a real person", do not mention AI, and never use internal language ("the system", "our records", "flagging", "escalating").
 - Write in the same language the approved reply is written in.
 - Use the customer's name only if the approved reply uses it.
@@ -1165,7 +1167,7 @@ app.get('/api/health', async (req, res) => {
   }
   res.json({
     status: 'ok',
-    version: 'v12 - inbox: thread split, customer panel + cart, three draft tones, needsHuman flag',
+    version: 'v12.1 - inbox: thread split, customer panel + cart, three draft tones (no-math rule), needsHuman flag',
     storage: dbReady ? 'mongodb (persistent)' : 'in-memory (resets on restart)',
     dbError: dbError || null,
     leadsStored: leadCount,
