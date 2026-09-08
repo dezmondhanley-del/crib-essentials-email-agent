@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crib Essentials — Inbox</title>
+<style>
+  :root{
+    --bg:#f6f6f7; --panel:#ffffff; --ink:#1a1a1a; --muted:#616161; --faint:#8a8a8a;
+    --line:#e3e3e3; --soft:#f1f1f1; --bubble:#f1f1f1; --black:#1a1a1a;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:14px/1.45 -apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  a{color:var(--ink)}
+  .top{height:52px;background:var(--panel);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;padding:0 18px}
+  .top h1{margin:0;font-size:16px;font-weight:700}
+  .top .st{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+  .dot{width:7px;height:7px;border-radius:50%;background:#bdbdbd}
+  .dot.live{background:#1a1a1a}
+  .top .spacer{flex:1}
+  .count{font-size:12px;color:var(--muted)}
+  .count b{color:var(--ink)}
+  .app{display:grid;grid-template-columns:320px minmax(0,1fr) 340px;height:calc(100vh - 52px)}
+  @media (max-width:1100px){ .app{grid-template-columns:280px minmax(0,1fr)} .cust{display:none} }
+  @media (max-width:760px){ .app{grid-template-columns:1fr;height:auto} .convo{min-height:70vh} }
+
+  /* ---- conversation list ---- */
+  .list{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+  .tabs{display:flex;gap:4px;padding:10px 12px;border-bottom:1px solid var(--line)}
+  .tab{padding:6px 11px;border-radius:8px;border:0;background:transparent;font:inherit;font-size:13px;color:var(--muted);cursor:pointer}
+  .tab.on{background:var(--soft);color:var(--ink);font-weight:600}
+  .rows{overflow-y:auto;flex:1}
+  .row{display:flex;gap:11px;padding:12px 14px;border-bottom:1px solid var(--line);cursor:pointer}
+  .row:hover{background:#fafafa}
+  .row.sel{background:var(--soft)}
+  .av{width:36px;height:36px;border-radius:50%;background:#e0e0e0;color:#1a1a1a;font-weight:700;font-size:13px;
+    display:flex;align-items:center;justify-content:center;flex:none}
+  .row .mid{min-width:0;flex:1}
+  .row .r1{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+  .row .nm{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .tm{font-size:12px;color:var(--faint);white-space:nowrap}
+  .row .sn{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+  .row.unread .sn{color:var(--ink)}
+  .row .flag{display:inline-block;width:8px;height:8px;border-radius:50%;background:#1a1a1a;margin-right:6px;vertical-align:middle}
+  .row .sub{font-size:11px;color:var(--faint);margin-top:2px}
+  .empty{padding:40px 20px;text-align:center;color:var(--faint);font-size:13px}
+
+  /* ---- conversation ---- */
+  .convo{display:flex;flex-direction:column;min-height:0;background:var(--panel);border-right:1px solid var(--line)}
+  .chead{padding:12px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px}
+  .chead .nm{font-weight:700;font-size:15px}
+  .chead .em{font-size:12px;color:var(--muted)}
+  .chead .badge{margin-left:auto;font-size:12px;color:var(--muted);border:1px solid var(--line);border-radius:14px;padding:3px 10px}
+  .msgs{flex:1;overflow-y:auto;padding:18px 20px;display:flex;flex-direction:column;gap:10px}
+  .day{align-self:center;font-size:12px;color:var(--faint);font-weight:600;margin:8px 0 2px}
+  .sys{align-self:center;font-size:12px;color:var(--faint)}
+  .m{max-width:72%;padding:11px 14px;border-radius:18px;white-space:pre-wrap;word-wrap:break-word;position:relative}
+  .m.them{align-self:flex-start;background:var(--bubble);border-bottom-left-radius:6px}
+  .m.us{align-self:flex-end;background:var(--panel);border:1px solid var(--line);border-bottom-right-radius:6px}
+  .m.draft{border-style:dashed;color:var(--muted)}
+  .m .t{display:block;font-size:11px;color:var(--faint);margin-top:6px}
+  .m .who{display:block;font-size:11px;color:var(--faint);margin-bottom:4px;font-weight:600}
+  .more{align-self:center;background:transparent;border:1px solid var(--line);border-radius:16px;padding:6px 14px;font:inherit;font-size:12px;color:var(--muted);cursor:pointer}
+  .more:hover{background:var(--soft)}
+  .hist{display:none;flex-direction:column;gap:10px;width:100%}
+  .hist.open{display:flex}
+  .hist .m{opacity:.85}
+  .compose{border-top:1px solid var(--line);padding:12px 20px 14px;background:var(--panel)}
+  .notice{background:var(--soft);border-radius:10px;padding:9px 12px;font-size:13px;color:var(--muted);margin-bottom:10px}
+  .notice b{color:var(--ink)}
+  .tones{display:flex;gap:6px;margin-bottom:8px}
+  .tone{padding:5px 12px;border:1px solid var(--line);border-radius:16px;background:transparent;color:var(--muted);font:inherit;font-size:12px;cursor:pointer}
+  .tone.on{background:var(--black);border-color:var(--black);color:#fff;font-weight:600}
+  .tone.edited{border-style:dashed}
+  .box{border:1.5px solid var(--black);border-radius:12px;overflow:hidden}
+  .box.off{border-color:var(--line)}
+  .box textarea{width:100%;min-height:96px;max-height:40vh;padding:12px 14px;border:0;resize:vertical;font:inherit;color:var(--ink);background:transparent;display:block}
+  .box textarea:focus{outline:0}
+  .box textarea::placeholder{color:var(--faint)}
+  .bar{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px solid var(--line);background:#fafafa}
+  .bar .grow{flex:1}
+  .btn{padding:9px 16px;border:0;border-radius:9px;font:inherit;font-weight:600;cursor:pointer;background:var(--black);color:#fff}
+  .btn:disabled{background:#d6d6d6;color:#8a8a8a;cursor:not-allowed}
+  .btn.ghost{background:transparent;color:var(--muted);border:1px solid var(--line)}
+  .hint{font-size:12px;color:var(--faint);margin-top:8px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+  .sendmsg{font-size:12px} .sendmsg.bad{color:#1a1a1a;font-weight:600} .sendmsg.good{color:var(--muted)}
+
+  /* ---- customer panel ---- */
+  .cust{background:var(--panel);overflow-y:auto;padding:18px 20px}
+  .cust .nm{font-weight:700;font-size:16px}
+  .cust .kind{color:var(--muted);font-size:13px;margin-bottom:12px}
+  .fact{display:flex;gap:10px;align-items:flex-start;margin:9px 0;font-size:14px}
+  .fact svg{width:18px;height:18px;flex:none;stroke:#616161;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;margin-top:2px}
+  .fact .v{min-width:0;word-break:break-word}
+  .fact .v small{display:block;color:var(--muted);font-size:12px}
+  .cust h4{margin:20px 0 8px;font-size:14px;font-weight:700}
+  .ord{padding:10px 0;border-top:1px solid var(--line)}
+  .ord:first-of-type{border-top:0;padding-top:0}
+  .ord .on{font-weight:600}
+  .ord .st{font-size:13px;color:var(--ink);margin-top:2px}
+  .ord .sep{color:var(--faint);margin:0 5px}
+  .ord .mt{font-size:13px;color:var(--muted);margin-top:2px}
+  .ord .it{font-size:13px;color:var(--muted);margin-top:6px}
+  .ord .it div{display:flex;justify-content:space-between;gap:8px;padding:2px 0}
+  .link{background:none;border:0;padding:0;font:inherit;font-size:13px;color:var(--ink);text-decoration:underline;cursor:pointer}
+  .cart{background:var(--soft);border-radius:10px;padding:10px 12px;font-size:13px}
+  .cart div{display:flex;justify-content:space-between;gap:8px;padding:2px 0}
+  .cart .tot{border-top:1px solid #dcdcdc;margin-top:4px;padding-top:6px;font-weight:600}
+  .cust .none{color:var(--faint);font-size:13px}
+  .err{background:var(--soft);color:var(--ink);padding:10px 14px;font-size:13px;border-bottom:1px solid var(--line)}
+  .tokform{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .tokform input{flex:1;min-width:220px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;background:#fff}
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>Crib Essentials · Inbox</h1>
+  <div class="st"><span class="dot" id="dot"></span><span id="statusText">connecting…</span></div>
+  <div class="spacer"></div>
+  <div class="count"><b id="c-needs">0</b> need you · <b id="c-open">0</b> awaiting reply · <b id="c-total">0</b> conversations</div>
+</div>
+<div id="errBox"></div>
+<div class="app">
+  <div class="list">
+    <div class="tabs">
+      <button class="tab on" data-f="all">All</button>
+      <button class="tab" data-f="needs">Needs you</button>
+      <button class="tab" data-f="open">Open</button>
+      <button class="tab" data-f="sent">Replied</button>
+    </div>
+    <div class="rows" id="rows"><div class="empty">Loading…</div></div>
+  </div>
+  <div class="convo" id="convo"><div class="empty">Select a conversation.</div></div>
+  <div class="cust" id="cust"><div class="none">Customer details show here.</div></div>
+</div>
+
+<script>
+// ---- Point this at your backend. Change it here if your Render URL changes. ----
+// Served from the backend itself (Render) it talks to the same origin; opened
+// anywhere else (Netlify, a local file) it talks to the Render URL below.
+var API_URL = (/^https?:$/.test(location.protocol) && !/netlify\.app$/.test(location.hostname))
+  ? location.origin : 'https://crib-essentials-email-agent.onrender.com';
+
+var leads = [], convos = [], filter = 'all', selectedKey = null, historyOpen = {}, noToken = false;
+
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+  return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+function when(d){
+  if(!d) return '';
+  var t = new Date(d), now = new Date(), mins = Math.floor((now - t)/60000);
+  if (mins < 1) return 'now';
+  if (mins < 60) return mins + 'm';
+  if (mins < 1440) return Math.floor(mins/60) + 'h';
+  if (mins < 1440*7) return Math.floor(mins/1440) + 'd';
+  return t.toLocaleDateString(undefined, {month:'short', day:'numeric'});
+}
+function clock(d){ return d ? new Date(d).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}) : ''; }
+function dayLabel(d){ return d ? new Date(d).toLocaleDateString(undefined, {month:'short', day:'numeric'}) : ''; }
+function money(v){ var n = Number(v); return isNaN(n) ? '0.00' : n.toFixed(2); }
+function pretty(s){ s = String(s || '').toLowerCase().replace(/_/g,' '); return s ? s.charAt(0).toUpperCase() + s.slice(1) : '—'; }
+function initials(name, email){
+  var n = String(name || '').trim();
+  if(n && n !== 'Unknown'){ var p = n.split(/\s+/); return (p[0][0] + (p[1] ? p[1][0] : '')).toUpperCase(); }
+  return String(email || '?')[0].toUpperCase();
+}
+function needsMe(l){ return !!l.needsHuman && l.status !== 'sent'; }
+function setStatus(ok, text){
+  document.getElementById('dot').className = 'dot ' + (ok ? 'live' : '');
+  document.getElementById('statusText').textContent = text;
+}
+
+async function load(){
+  try{
+    if(noToken) return;
+    var token = getToken();
+    if(!token){ askToken(); return; }
+    var r = await fetch(API_URL + '/api/leads', { headers: { 'x-dashboard-token': token } });
+    if(r.status === 401){
+      memToken = '';
+      try{ localStorage.removeItem('cribToken'); }catch(e){}
+      askToken('That token was not accepted. Check DASHBOARD_TOKEN in Render and try again.');
+      return;
+    }
+    if(!r.ok) throw new Error('Backend returned ' + r.status);
+    var data = await r.json();
+    leads = Array.isArray(data) ? data : [];
+    document.getElementById('errBox').innerHTML = '';
+    setStatus(true, 'Connected · ' + new Date().toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}));
+    group(); render();
+  }catch(err){
+    setStatus(false, 'Not connected');
+    document.getElementById('errBox').innerHTML = '<div class="err"><b>Can\'t reach the backend.</b> ' + esc(err.message) +
+      ' — if it has been idle, give it about a minute and this will retry on its own.</div>';
+  }
+}
+
+// One conversation per email thread (falls back to the sender's address).
+function group(){
+  var map = {};
+  leads.forEach(function(l){
+    var key = l.threadId || String(l.email || '').toLowerCase() || l._id;
+    if(!map[key]) map[key] = { key: key, items: [] };
+    map[key].items.push(l);
+  });
+  convos = Object.keys(map).map(function(k){
+    var c = map[k];
+    c.items.sort(function(a,b){ return new Date(a.createdAt) - new Date(b.createdAt); });
+    c.latest = c.items[c.items.length - 1];
+    c.name = (c.latest.customerProfile && c.latest.customerProfile.name) || c.latest.customerName || c.latest.email || 'Unknown';
+    c.email = c.latest.email || '';
+    c.needs = c.items.some(needsMe);
+    c.open = c.latest.status !== 'sent';
+    return c;
+  });
+}
+
+function render(){
+  document.getElementById('c-needs').textContent = convos.filter(function(c){ return c.needs; }).length;
+  document.getElementById('c-open').textContent = convos.filter(function(c){ return c.open; }).length;
+  document.getElementById('c-total').textContent = convos.length;
+
+  var shown = convos.filter(function(c){
+    if(filter === 'needs') return c.needs;
+    if(filter === 'open') return c.open;
+    if(filter === 'sent') return !c.open;
+    return true;
+  }).sort(function(a,b){
+    if(a.needs !== b.needs) return a.needs ? -1 : 1;
+    return new Date(b.latest.createdAt) - new Date(a.latest.createdAt);
+  });
+
+  var rows = document.getElementById('rows');
+  if(!shown.length){
+    rows.innerHTML = '<div class="empty">' + (leads.length ? 'Nothing here.' : 'No conversations yet.') + '</div>';
+  } else {
+    rows.innerHTML = shown.map(function(c){
+      var l = c.latest;
+      return '<div class="row' + (c.key === selectedKey ? ' sel' : '') + (c.open ? ' unread' : '') + '" data-k="' + esc(c.key) + '">' +
+        '<div class="av">' + esc(initials(c.name, c.email)) + '</div>' +
+        '<div class="mid"><div class="r1"><span class="nm">' + esc(c.name) + '</span><span class="tm">' + esc(when(l.createdAt)) + '</span></div>' +
+        '<div class="sn">' + (c.needs ? '<span class="flag" title="Needs you"></span>' : '') + esc(l.question || '') + '</div>' +
+        '<div class="sub">' + esc(l.subject || '') + (c.items.length > 1 ? ' · ' + c.items.length + ' emails' : '') + '</div></div></div>';
+    }).join('');
+    Array.prototype.forEach.call(rows.querySelectorAll('.row'), function(el){
+      el.onclick = function(){ selectedKey = el.getAttribute('data-k'); render(); };
+    });
+  }
+  renderConvo();
+  renderCustomer();
+}
+
+function selected(){ return convos.filter(function(c){ return c.key === selectedKey; })[0]; }
+
+// Email clients hard-wrap plain text at ~72 characters; unwrap those so the
+// bubble reflows, but keep real paragraph breaks.
+function unwrap(t){ return String(t || '').replace(/\r/g, '').replace(/([^\n])\n(?!\n)/g, '$1 '); }
+function bubble(cls, text, meta, who){
+  return '<div class="m ' + cls + '">' + (who ? '<span class="who">' + esc(who) + '</span>' : '') + esc(unwrap(text)) +
+    (meta ? '<span class="t">' + esc(meta) + '</span>' : '') + '</div>';
+}
+
+function renderConvo(){
+  var el = document.getElementById('convo');
+  var c = selected();
+  if(!c){ el.innerHTML = '<div class="empty">Select a conversation.</div>'; return; }
+  var latest = c.latest;
+  var profile = latest.customerProfile;
+  var kind = profile ? (Number(profile.totalOrders) > 1 ? 'Returning customer' : (Number(profile.totalOrders) === 1 ? 'Customer' : 'New')) : 'Not in Shopify';
+
+  var html = '<div class="chead"><div class="av">' + esc(initials(c.name, c.email)) + '</div>' +
+    '<div><div class="nm">' + esc(c.name) + '</div><div class="em">' + esc(c.email) + (latest.subject ? ' · ' + esc(latest.subject) : '') + '</div></div>' +
+    '<span class="badge">' + esc(kind) + '</span></div>';
+
+  html += '<div class="msgs" id="msgs">';
+  var lastDay = '';
+  c.items.forEach(function(l, idx){
+    // Quoted history from the first email in the thread, collapsed behind a button.
+    if(idx === 0 && Array.isArray(l.thread) && l.thread.length){
+      var hist = l.thread.slice().reverse(); // oldest first
+      html += '<button class="more" id="moreBtn">' + (historyOpen[c.key] ? 'Hide' : 'Show') + ' earlier conversation (' + hist.length + ')</button>';
+      html += '<div class="hist' + (historyOpen[c.key] ? ' open' : '') + '">';
+      hist.forEach(function(m){
+        html += bubble(m.mine ? 'us' : 'them', m.text, m.date || '', m.mine ? 'Crib Essentials' : (m.name || ''));
+      });
+      html += '</div>';
+    }
+    var d = dayLabel(l.createdAt);
+    if(d !== lastDay){ html += '<div class="day">' + esc(d) + '</div>'; lastDay = d; }
+    html += bubble('them', l.question || '', clock(l.createdAt));
+    if(l.status === 'sent'){
+      html += bubble('us', l.sentBody || l.aiResponse || '', 'Sent ' + clock(l.sentAt));
+    } else if(idx < c.items.length - 1){
+      html += bubble('us draft', l.aiResponse || '', 'Draft — never sent');
+    }
+  });
+  html += '</div>';
+
+  // Compose for the latest email in the thread.
+  var drafts = draftsFor(latest);
+  html += '<div class="compose">';
+  if(latest.status === 'sent'){
+    html += '<div class="notice">Replied ' + esc(new Date(latest.sentAt).toLocaleString()) + '. A new email from them will reopen this conversation.</div>';
+  } else {
+    if(needsMe(latest)){
+      html += '<div class="notice"><b>Needs you:</b> ' + esc(latest.flagReason || 'Claude could not finish this one — read the draft and fill in the answer before sending.') + '</div>';
+    }
+    if(drafts.length > 1){
+      html += '<div class="tones" id="tones">' + drafts.map(function(d, i){
+        return '<button class="tone' + (i === 0 ? ' on' : '') + '" data-i="' + i + '">' + esc(d.label) + '</button>'; }).join('') + '</div>';
+    }
+    html += '<div class="box" id="box"><textarea id="composeBox" placeholder="Write email…">' + esc(drafts[0].text) + '</textarea>' +
+      '<div class="bar"><button class="btn ghost" id="resetBtn">Reset</button><span class="grow"></span>' +
+      '<span class="sendmsg" id="sendMsg"></span><button class="btn" id="sendBtn">Send email</button></div></div>';
+    html += '<div class="hint"><span>' + (latest.threadId
+      ? 'Replies to ' + esc(c.email) + ' in the original thread from support@1cribessential.com.'
+      : 'No email thread attached — this one can\'t be replied to from here.') + '</span></div>';
+  }
+  html += '</div>';
+  el.innerHTML = html;
+
+  var msgs = document.getElementById('msgs');
+  if(msgs) msgs.scrollTop = msgs.scrollHeight;
+
+  var moreBtn = document.getElementById('moreBtn');
+  if(moreBtn){ moreBtn.onclick = function(){ historyOpen[c.key] = !historyOpen[c.key]; renderConvo(); }; }
+
+  var sendBtn = document.getElementById('sendBtn');
+  if(sendBtn){
+    if(!latest.threadId) sendBtn.disabled = true;
+    sendBtn.onclick = function(){ sendReply(latest, sendBtn); };
+    var current = 0, box = document.getElementById('composeBox');
+    var toneBtns = Array.prototype.slice.call(document.querySelectorAll('#tones .tone'));
+    function pick(i){
+      current = i; box.value = drafts[i].text;
+      toneBtns.forEach(function(b, j){ b.classList.toggle('on', j === i); b.classList.remove('edited'); });
+    }
+    toneBtns.forEach(function(b){
+      b.onclick = function(){
+        var i = Number(b.getAttribute('data-i'));
+        if(i === current) return;
+        if(box.value !== drafts[current].text && !window.confirm('Switch tone? Your edits to this draft will be lost.')) return;
+        pick(i);
+      };
+    });
+    box.addEventListener('input', function(){
+      if(toneBtns[current]) toneBtns[current].classList.toggle('edited', box.value !== drafts[current].text);
+    });
+    document.getElementById('resetBtn').onclick = function(){ pick(current); };
+  }
+}
+
+function draftsFor(l){
+  var list = Array.isArray(l.drafts) ? l.drafts.filter(function(d){ return d && d.text; }) : [];
+  if(!list.length) list = [{ tone: 'short', label: 'Short & warm', text: l.aiResponse || '' }];
+  return list;
+}
+
+var ICON = {
+  cal: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+  cart: '<svg viewBox="0 0 24 24"><path d="M3 4h2l2.4 11.2a1 1 0 0 0 1 .8h9.6a1 1 0 0 0 1-.8L21 8H6.5"/><circle cx="9" cy="20" r="1.3"/><circle cx="17" cy="20" r="1.3"/></svg>',
+  mail: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>',
+  phone: '<svg viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/></svg>',
+  pin: '<svg viewBox="0 0 24 24"><path d="M12 21s7-6.2 7-11a7 7 0 0 0-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>'
+};
+function daysAgo(d){ if(!d) return null; return Math.max(0, Math.floor((Date.now() - new Date(d)) / 86400000)); }
+
+var showAllOrders = {};
+function renderCustomer(){
+  var el = document.getElementById('cust');
+  var c = selected();
+  if(!c){ el.innerHTML = '<div class="none">Customer details show here.</div>'; return; }
+  var l = c.latest, p = l.customerProfile, cart = l.cart;
+  var html = '<div class="nm">' + esc(c.name) + '</div>';
+  if(!p){
+    html += '<div class="kind">Not found in Shopify</div>' +
+      '<div class="fact">' + ICON.mail + '<div class="v">' + esc(c.email) + '</div></div>' +
+      '<div class="none" style="margin-top:14px">No orders or cart under this email. They may have checked out with a different address.</div>';
+    el.innerHTML = html; return;
+  }
+  var n = Number(p.totalOrders) || 0;
+  html += '<div class="kind">' + (n > 1 ? 'Returning customer' : (n === 1 ? 'First order' : 'No orders yet')) + '</div>';
+  var da = daysAgo(p.since);
+  if(da !== null) html += '<div class="fact">' + ICON.cal + '<div class="v">Customer for ' + da + ' day' + (da === 1 ? '' : 's') + '</div></div>';
+  html += '<div class="fact">' + ICON.cart + '<div class="v">$' + esc(money(p.totalSpent)) + ' lifetime spend<small>' + n + ' order' + (n === 1 ? '' : 's') + '</small></div></div>';
+  html += '<div class="fact">' + ICON.mail + '<div class="v">' + esc(p.email || c.email) + '</div></div>';
+  if(p.phone) html += '<div class="fact">' + ICON.phone + '<div class="v">' + esc(p.phone) + '</div></div>';
+  if(p.location) html += '<div class="fact">' + ICON.pin + '<div class="v">' + esc(p.location) + '</div></div>';
+  if(p.note) html += '<div class="fact"><div class="v"><small>Note</small>' + esc(p.note) + '</div></div>';
+
+  if(cart && cart.items && cart.items.length){
+    html += '<h4>In their cart</h4><div class="cart">' + cart.items.map(function(i){
+      return '<div><span>' + esc(i.title) + (i.variant ? ' · ' + esc(i.variant) : '') + ' × ' + esc(i.quantity) + '</span><span>' + (i.price != null ? '$' + esc(money(i.price)) : '') + '</span></div>';
+    }).join('') + '<div class="tot"><span>Checkout not finished</span><span>$' + esc(money(cart.total)) + '</span></div></div>' +
+    '<div class="mt" style="font-size:12px;color:var(--faint);margin-top:6px">Updated ' + esc(new Date(cart.updatedAt).toLocaleString()) +
+    (cart.url ? ' · <a href="' + esc(cart.url) + '" target="_blank" rel="noopener">open checkout</a>' : '') + '</div>';
+  }
+
+  var orders = p.orders || [];
+  if(orders.length){
+    var all = !!showAllOrders[c.key];
+    html += '<h4>' + (all ? 'Orders' : 'Last order placed') + '</h4>';
+    (all ? orders : orders.slice(0, 1)).forEach(function(o){
+      html += '<div class="ord"><div class="on">' + esc(o.name) + '</div>' +
+        '<div class="st">' + esc(pretty(o.financial)) + '<span class="sep">•</span>' + esc(pretty(o.fulfillment)) + '</div>' +
+        '<div class="mt">$' + esc(money(o.total)) + '<span class="sep">•</span>' + esc(o.createdAt ? new Date(o.createdAt).toLocaleString([], {month:'long', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit'}) : '') + '</div>' +
+        '<div class="it">' + (o.items || []).map(function(i){
+          return '<div><span>' + esc(i.title) + (i.variant ? ' · ' + esc(i.variant) : '') + '</span><span>× ' + esc(i.quantity) + '</span></div>'; }).join('') + '</div>' +
+        (o.tracking || []).map(function(t){
+          return '<div class="mt">' + esc(t.company || 'Tracking') + ' ' + esc(t.number || '') + (t.url ? ' · <a href="' + esc(t.url) + '" target="_blank" rel="noopener">track</a>' : '') + '</div>'; }).join('') +
+        '</div>';
+    });
+    if(orders.length > 1) html += '<button class="link" id="viewAll">' + (all ? 'Show less' : 'View all') + '</button>';
+  } else {
+    html += '<h4>Orders</h4><div class="none">No orders yet.</div>';
+  }
+  el.innerHTML = html;
+  var va = document.getElementById('viewAll');
+  if(va) va.onclick = function(){ showAllOrders[c.key] = !showAllOrders[c.key]; renderCustomer(); };
+}
+
+// Token is stored in this browser once entered. No window.prompt - some
+// browsers and in-app views block it - so we show a small inline form instead.
+var memToken = '';
+function getToken(){
+  if(memToken) return memToken;
+  try { memToken = localStorage.getItem('cribToken') || ''; } catch(e){}
+  return memToken;
+}
+function askToken(message){
+  noToken = true;
+  setStatus(false, 'Sign in');
+  document.getElementById('errBox').innerHTML =
+    '<div class="err"><form id="tokForm" class="tokform">' +
+      '<b>' + esc(message || 'Enter your dashboard token to open the inbox.') + '</b>' +
+      '<input type="password" id="tokInput" placeholder="DASHBOARD_TOKEN from Render" autocomplete="current-password">' +
+      '<button class="btn" type="submit">Open inbox</button></form></div>';
+  var form = document.getElementById('tokForm');
+  form.onsubmit = function(e){
+    e.preventDefault();
+    var v = (document.getElementById('tokInput').value || '').trim();
+    if(!v) return;
+    memToken = v;
+    try { localStorage.setItem('cribToken', v); } catch(err){}
+    noToken = false;
+    document.getElementById('errBox').innerHTML = '';
+    load();
+  };
+  setTimeout(function(){ var i = document.getElementById('tokInput'); if(i) i.focus(); }, 50);
+}
+
+async function sendReply(lead, btn){
+  var box = document.getElementById('composeBox');
+  var msg = document.getElementById('sendMsg');
+  var text = (box.value || '').trim();
+  if(!text){ msg.className='sendmsg bad'; msg.textContent='Nothing to send.'; return; }
+  if(!window.confirm('Send this email to ' + (lead.email || 'the customer') + '?')) return;
+  var token = getToken();
+  if(!token){ askToken('Enter your dashboard token to send.'); return; }
+  btn.disabled = true; msg.className='sendmsg'; msg.textContent='Sending…';
+  try{
+    var r = await fetch(API_URL + '/api/leads/' + encodeURIComponent(lead._id) + '/send', {
+      method:'POST', headers:{ 'Content-Type':'application/json', 'x-dashboard-token': token },
+      body: JSON.stringify({ body: text })
+    });
+    var data = await r.json().catch(function(){ return {}; });
+    if(!r.ok){
+      if(r.status === 401){ try{ localStorage.removeItem('cribToken'); }catch(e){} }
+      throw new Error(data.error || ('Server returned ' + r.status));
+    }
+    msg.className='sendmsg good'; msg.textContent='Sent.';
+    await load();
+  }catch(err){
+    msg.className='sendmsg bad'; msg.textContent = err.message; btn.disabled = false;
+  }
+}
+
+Array.prototype.forEach.call(document.querySelectorAll('.tab'), function(b){
+  b.onclick = function(){
+    Array.prototype.forEach.call(document.querySelectorAll('.tab'), function(x){ x.classList.remove('on'); });
+    b.classList.add('on'); filter = b.getAttribute('data-f'); render();
+  };
+});
+
+load();
+setInterval(load, 15000);
+</script>
+</body>
+</html>
