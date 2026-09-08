@@ -2,27 +2,42 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Crib Essentials — Inbox</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="icon" href="/icon-192.png">
+<meta name="theme-color" content="#111111">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="CE Inbox">
 <style>
   :root{
-    --bg:#f6f6f7; --panel:#ffffff; --ink:#1a1a1a; --muted:#616161; --faint:#8a8a8a;
-    --line:#e3e3e3; --soft:#f1f1f1; --bubble:#f1f1f1; --black:#1a1a1a;
+    /* Black / white / grey base with one warm accent (clay) - change --accent to retheme. */
+    --bg:#f4f3f1; --panel:#ffffff; --ink:#151515; --muted:#5f5f5f; --faint:#8d8d8d;
+    --line:#e6e4e1; --soft:#f2f0ed; --bubble:#f1efec; --black:#151515;
+    --accent:#c4693d; --accent-soft:#f8ebe4; --accent-ink:#8f4523;
+    --good:#2f7d4f; --good-soft:#e6f3ea; --warn:#b26a00; --warn-soft:#fff3df;
+    --top:#111111; --top-ink:#ffffff;
+    --r:14px;
   }
   *{box-sizing:border-box}
   html,body{height:100%}
   body{margin:0;background:var(--bg);color:var(--ink);
     font:14px/1.45 -apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,Helvetica,Arial,sans-serif}
   a{color:var(--ink)}
-  .top{height:52px;background:var(--panel);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;padding:0 18px}
-  .top h1{margin:0;font-size:16px;font-weight:700}
-  .top .st{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
-  .dot{width:7px;height:7px;border-radius:50%;background:#bdbdbd}
-  .dot.live{background:#1a1a1a}
+  .top{height:52px;background:var(--top);color:var(--top-ink);display:flex;align-items:center;gap:14px;padding:0 18px;padding-top:env(safe-area-inset-top)}
+  .top h1{margin:0;font-size:15px;font-weight:700;letter-spacing:.01em;display:flex;align-items:center;gap:10px}
+  .logo{width:26px;height:26px;border-radius:7px;background:#fff;color:#111;font-weight:800;font-size:11px;display:flex;align-items:center;justify-content:center;position:relative;flex:none}
+  .logo:after{content:"";position:absolute;left:6px;right:6px;bottom:4px;height:2px;border-radius:2px;background:var(--accent)}
+  .top .st{display:flex;align-items:center;gap:6px;font-size:12px;color:#bdbdbd}
+  .dot{width:7px;height:7px;border-radius:50%;background:#6b6b6b}
+  .dot.live{background:#5ecb82}
   .top .spacer{flex:1}
-  .count{font-size:12px;color:var(--muted)}
-  .count b{color:var(--ink)}
-  .app{display:grid;grid-template-columns:320px minmax(0,1fr) 340px;height:calc(100vh - 52px)}
+  .count{font-size:12px;color:#bdbdbd}
+  .count b{color:#fff}
+  .app{display:grid;grid-template-columns:360px minmax(0,1fr) 340px;height:calc(100vh - 52px)}
   .back,.custbtn{display:none}
   @media (max-width:1100px){
     .app{grid-template-columns:280px minmax(0,1fr)}
@@ -43,7 +58,7 @@
     .m{max-width:88%}
     .count{display:none}
     .top{padding:0 14px;gap:10px}
-    .top h1{font-size:15px;white-space:nowrap}
+    .top h1{font-size:14px;white-space:nowrap}
     .top .st span:last-child{display:none}
     .chead{padding:10px 12px;gap:8px}
     .chead .badge{display:none}
@@ -52,23 +67,41 @@
 
   /* ---- conversation list ---- */
   .list{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;min-width:0}
-  .tabs{display:flex;gap:4px;padding:10px 12px;border-bottom:1px solid var(--line)}
-  .tab{padding:6px 11px;border-radius:8px;border:0;background:transparent;font:inherit;font-size:13px;color:var(--muted);cursor:pointer}
-  .tab.on{background:var(--soft);color:var(--ink);font-weight:600}
+  .tabs{display:flex;gap:2px;padding:10px 8px 8px;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tab{padding:5px 9px;border-radius:999px;border:1px solid transparent;background:transparent;font:inherit;font-size:12.5px;color:var(--muted);cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:5px;flex:none}
+  .tab .n{font-size:10.5px;background:var(--soft);color:var(--muted);border-radius:999px;padding:1px 5px;min-width:16px;text-align:center}
+  .tab.on{background:var(--ink);color:#fff;font-weight:600}
+  .tab.on .n{background:rgba(255,255,255,.2);color:#fff}
+  .tab[data-f="needs"].on{background:var(--accent)}
+  .search{padding:8px 10px;border-bottom:1px solid var(--line)}
+  .search input{width:100%;padding:8px 12px;border:1px solid var(--line);border-radius:999px;font:inherit;font-size:13px;background:var(--soft);color:var(--ink)}
+  .search input:focus{outline:0;border-color:var(--ink);background:#fff}
   .rows{overflow-y:auto;flex:1}
-  .row{display:flex;gap:11px;padding:12px 14px;border-bottom:1px solid var(--line);cursor:pointer;min-width:0;overflow:hidden}
-  .row:hover{background:#fafafa}
+  .row{display:flex;gap:11px;padding:12px 14px;border-bottom:1px solid var(--line);cursor:pointer;min-width:0;overflow:hidden;position:relative}
+  .row:hover{background:#faf9f7}
   .row.sel{background:var(--soft)}
-  .av{width:36px;height:36px;border-radius:50%;background:#e0e0e0;color:#1a1a1a;font-weight:700;font-size:13px;
-    display:flex;align-items:center;justify-content:center;flex:none}
+  .row.sel:before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--ink)}
+  .row.needs.sel:before{background:var(--accent)}
+  .av{width:38px;height:38px;border-radius:50%;background:var(--soft);color:var(--ink);font-weight:700;font-size:13px;
+    display:flex;align-items:center;justify-content:center;flex:none;border:1px solid var(--line)}
+  .av.c0{background:#ecebe8;color:#2a2a2a}.av.c1{background:#f8ebe4;color:#8f4523}.av.c2{background:#e6f3ea;color:#2f7d4f}
+  .av.c3{background:#e8eef7;color:#2f4f7d}.av.c4{background:#f5ecf7;color:#6d3f7a}.av.c5{background:#fff3df;color:#8a5200}
+  .av.c6{background:#e5f4f4;color:#1f6b6b}.av.c7{background:#f0ede3;color:#5c4d1a}
+  .chip{display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;border-radius:999px;padding:2px 7px;vertical-align:middle;white-space:nowrap}
+  .chip.needs{background:var(--accent-soft);color:var(--accent-ink)}
+  .chip.draft{background:var(--soft);color:var(--muted)}
+  .chip.sent{background:var(--good-soft);color:var(--good)}
+  .chip.photo{background:#e8eef7;color:#2f4f7d}
   .row .mid{min-width:0;flex:1}
   .row .r1{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
   .row .nm{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .row .tm{font-size:12px;color:var(--faint);white-space:nowrap}
   .row .sn{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
   .row.unread .sn{color:var(--ink)}
-  .row .flag{display:inline-block;width:8px;height:8px;border-radius:50%;background:#1a1a1a;margin-right:6px;vertical-align:middle}
-  .row .sub{font-size:11px;color:var(--faint);margin-top:2px}
+  .row .flag{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--accent);margin-right:6px;vertical-align:middle}
+  .row .sub{font-size:11px;color:var(--faint);margin-top:3px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .row .sum{font-size:12px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .empty{padding:40px 20px;text-align:center;color:var(--faint);font-size:13px}
 
   /* ---- conversation ---- */
@@ -77,13 +110,24 @@
   .chead .nm{font-weight:700;font-size:15px}
   .chead .em{font-size:12px;color:var(--muted)}
   .chead .badge{margin-left:auto;font-size:12px;color:var(--muted);border:1px solid var(--line);border-radius:14px;padding:3px 10px}
+  .summary{margin:12px 20px 0;background:var(--accent-soft);border-left:3px solid var(--accent);border-radius:10px;padding:9px 12px;font-size:13px;color:var(--accent-ink)}
+  .summary b{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;color:var(--accent-ink);opacity:.8}
   .msgs{flex:1;overflow-y:auto;padding:18px 20px;display:flex;flex-direction:column;gap:10px}
   .day{align-self:center;font-size:12px;color:var(--faint);font-weight:600;margin:8px 0 2px}
   .sys{align-self:center;font-size:12px;color:var(--faint)}
   .m{max-width:72%;padding:11px 14px;border-radius:18px;white-space:pre-wrap;word-wrap:break-word;position:relative}
   .m.them{align-self:flex-start;background:var(--bubble);border-bottom-left-radius:6px}
-  .m.us{align-self:flex-end;background:var(--panel);border:1px solid var(--line);border-bottom-right-radius:6px}
-  .m.draft{border-style:dashed;color:var(--muted)}
+  .m.us{align-self:flex-end;background:var(--ink);color:#fff;border-bottom-right-radius:6px}
+  .m.us .t,.m.us .who{color:#bdbdbd}
+  .m.draft{background:var(--panel);color:var(--muted);border:1px dashed var(--line)}
+  .m.draft .t,.m.draft .who{color:var(--faint)}
+  .pics{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  .pics a{display:block;border-radius:10px;overflow:hidden;border:1px solid rgba(0,0,0,.08);background:#fff}
+  .pics img{display:block;width:120px;height:120px;object-fit:cover}
+  .pics .file{display:flex;align-items:center;gap:6px;padding:8px 10px;font-size:12px;color:var(--ink);text-decoration:none;max-width:200px}
+  .pics .file span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lightbox{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:50;display:flex;align-items:center;justify-content:center;padding:20px}
+  .lightbox img{max-width:100%;max-height:100%;border-radius:8px}
   .m .t{display:block;font-size:11px;color:var(--faint);margin-top:6px}
   .m .who{display:block;font-size:11px;color:var(--faint);margin-bottom:4px;font-weight:600}
   .more{align-self:center;background:transparent;border:1px solid var(--line);border-radius:16px;padding:6px 14px;font:inherit;font-size:12px;color:var(--muted);cursor:pointer}
@@ -94,9 +138,13 @@
   .compose{border-top:1px solid var(--line);padding:12px 20px 14px;background:var(--panel)}
   .notice{background:var(--soft);border-radius:10px;padding:9px 12px;font-size:13px;color:var(--muted);margin-bottom:10px}
   .notice b{color:var(--ink)}
+  .notice.needs{background:var(--accent-soft);color:var(--accent-ink);border-left:3px solid var(--accent)}
+  .notice.needs b{color:var(--accent-ink)}
+  .notice.sent{background:var(--good-soft);color:var(--good)}
   .tones{display:flex;gap:6px;margin-bottom:8px}
   .tone{padding:5px 12px;border:1px solid var(--line);border-radius:16px;background:transparent;color:var(--muted);font:inherit;font-size:12px;cursor:pointer}
   .tone.on{background:var(--black);border-color:var(--black);color:#fff;font-weight:600}
+  .tone.edited{border-color:var(--accent);color:var(--accent-ink)}
   .tone.edited{border-style:dashed}
   .box{border:1.5px solid var(--black);border-radius:12px;overflow:hidden}
   .box.off{border-color:var(--line)}
@@ -106,15 +154,34 @@
   .bar{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px solid var(--line);background:#fafafa}
   .bar .grow{flex:1}
   .btn{padding:9px 16px;border:0;border-radius:9px;font:inherit;font-weight:600;cursor:pointer;background:var(--black);color:#fff}
+  .btn.accent{background:var(--accent)}
   .btn:disabled{background:#d6d6d6;color:#8a8a8a;cursor:not-allowed}
   .btn.ghost{background:transparent;color:var(--muted);border:1px solid var(--line)}
   .hint{font-size:12px;color:var(--faint);margin-top:8px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
-  .sendmsg{font-size:12px} .sendmsg.bad{color:#1a1a1a;font-weight:600} .sendmsg.good{color:var(--muted)}
+  .sendmsg{font-size:12px} .sendmsg.bad{color:var(--accent-ink);font-weight:600} .sendmsg.good{color:var(--good)}
 
   /* ---- customer panel ---- */
   .cust{background:var(--panel);overflow-y:auto;padding:18px 20px}
+  .cust .head{display:flex;gap:12px;align-items:center;margin-bottom:8px}
   .cust .nm{font-weight:700;font-size:16px}
   .cust .kind{color:var(--muted);font-size:13px;margin-bottom:12px}
+  .cust .kind.ret{color:var(--good)}
+  .cust .kind.none{color:var(--faint)}
+  .stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:12px 0}
+  .stat{background:var(--soft);border-radius:10px;padding:9px 10px}
+  .stat b{display:block;font-size:15px}
+  .stat span{font-size:11px;color:var(--muted)}
+  .cands{margin-top:12px}
+  .cand{display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line);cursor:pointer}
+  .cand:hover{background:#faf9f7}
+  .cand .who{min-width:0;flex:1}
+  .cand .who b{display:block;font-size:13px}
+  .cand .who span{font-size:12px;color:var(--muted);display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cand .go{font-size:12px;color:var(--accent-ink);font-weight:600}
+  .lookup{display:flex;gap:6px;margin-top:10px}
+  .lookup input{flex:1;min-width:0;padding:8px 10px;border:1px solid var(--line);border-radius:9px;font:inherit;font-size:13px}
+  .lookup .btn{padding:8px 12px;font-size:13px}
+  .matched{font-size:11px;color:var(--faint);margin:-6px 0 10px}
   .fact{display:flex;gap:10px;align-items:flex-start;margin:9px 0;font-size:14px}
   .fact svg{width:18px;height:18px;flex:none;stroke:#616161;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;margin-top:2px}
   .fact .v{min-width:0;word-break:break-word}
@@ -131,14 +198,14 @@
   .link{background:none;border:0;padding:0;font:inherit;font-size:13px;color:var(--ink);text-decoration:underline;cursor:pointer}
   .ord.click{cursor:pointer;border-radius:10px;padding:10px;margin:0 -10px}
   .ord.click:hover{background:#fafafa}
-  .ord .top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .ord .top{display:flex;justify-content:space-between;align-items:center;gap:8px;height:auto;padding:0;background:transparent;color:inherit}
   .ord .chev{color:var(--faint);font-size:12px}
   .ord .detail{display:none;margin-top:8px}
   .ord.open .detail{display:block}
   .ip{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:600;margin-left:6px;vertical-align:middle;white-space:nowrap}
-  .ip.no{background:#1a1a1a;color:#fff}
-  .ip.yes{background:#e6e6e6;color:#1a1a1a}
-  .ip.part{background:#fff;color:#1a1a1a;border:1px solid #1a1a1a}
+  .ip.no{background:var(--accent-soft);color:var(--accent-ink)}
+  .ip.yes{background:var(--good-soft);color:var(--good)}
+  .ip.part{background:var(--warn-soft);color:var(--warn)}
   .ship{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-top:8px;font-size:13px}
   .ship .sh{font-weight:600;display:flex;justify-content:space-between;gap:8px}
   .ship .si{color:var(--muted);margin-top:2px}
@@ -147,7 +214,7 @@
   .cart div{display:flex;justify-content:space-between;gap:8px;padding:2px 0}
   .cart .tot{border-top:1px solid #dcdcdc;margin-top:4px;padding-top:6px;font-weight:600}
   .cust .none{color:var(--faint);font-size:13px}
-  .err{background:var(--soft);color:var(--ink);padding:10px 14px;font-size:13px;border-bottom:1px solid var(--line)}
+  .err{background:var(--warn-soft);color:var(--ink);padding:10px 14px;font-size:13px;border-bottom:1px solid var(--line)}
   .edit{background:none;border:0;padding:0;font:inherit;font-size:12px;color:var(--muted);text-decoration:underline;cursor:pointer;margin-left:8px}
   .form{border:1px solid var(--line);border-radius:10px;padding:10px;margin-top:8px;background:#fafafa}
   .form label{display:block;font-size:11px;color:var(--muted);margin:6px 0 2px;text-transform:uppercase;letter-spacing:.04em}
@@ -166,7 +233,7 @@
 </head>
 <body>
 <div class="top">
-  <h1>Crib Essentials · Inbox</h1>
+  <h1><span class="logo">CE</span>Inbox</h1>
   <div class="st"><span class="dot" id="dot"></span><span id="statusText">connecting…</span></div>
   <div class="spacer"></div>
   <div class="count"><b id="c-needs">0</b> need you · <b id="c-open">0</b> awaiting reply · <b id="c-total">0</b> conversations</div>
@@ -175,11 +242,12 @@
 <div class="app">
   <div class="list">
     <div class="tabs">
-      <button class="tab on" data-f="all">All</button>
-      <button class="tab" data-f="needs">Needs you</button>
-      <button class="tab" data-f="open">Open</button>
-      <button class="tab" data-f="sent">Replied</button>
+      <button class="tab on" data-f="all">All <span class="n" id="n-all">0</span></button>
+      <button class="tab" data-f="needs">Needs you <span class="n" id="n-needs">0</span></button>
+      <button class="tab" data-f="open">Unanswered <span class="n" id="n-open">0</span></button>
+      <button class="tab" data-f="sent">Replied <span class="n" id="n-sent">0</span></button>
     </div>
+    <div class="search"><input id="q" type="search" placeholder="Search name, email, order #, subject…" autocomplete="off"></div>
     <div class="rows" id="rows"><div class="empty">Loading…</div></div>
   </div>
   <div class="convo" id="convo"><div class="empty">Select a conversation.</div></div>
@@ -193,7 +261,7 @@
 var API_URL = (/^https?:$/.test(location.protocol) && !/netlify\.app$/.test(location.hostname))
   ? location.origin : 'https://crib-essentials-email-agent.onrender.com';
 
-var leads = [], convos = [], filter = 'all', selectedKey = null, historyOpen = {}, noToken = false;
+var leads = [], convos = [], filter = 'all', query = '', selectedKey = null, historyOpen = {}, noToken = false;
 
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
   return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
@@ -216,6 +284,34 @@ function initials(name, email){
   return String(email || '?')[0].toUpperCase();
 }
 function needsMe(l){ return !!l.needsHuman && l.status !== 'sent'; }
+function avClass(key){ var h = 0, k = String(key || ''); for(var i = 0; i < k.length; i++){ h = (h * 31 + k.charCodeAt(i)) >>> 0; } return 'av c' + (h % 8); }
+function statusChip(c){
+  if(c.needs) return '<span class="chip needs">Needs you</span>';
+  if(c.open) return '<span class="chip draft">Draft ready</span>';
+  return '<span class="chip sent">Replied</span>';
+}
+function hasPhotos(l){
+  var n = Array.isArray(l.attachments) ? l.attachments.length : 0;
+  (Array.isArray(l.thread) ? l.thread : []).forEach(function(m){ n += (m.attachments || []).length; });
+  return n;
+}
+function matches(c, q){
+  if(!q) return true;
+  var hay = [c.name, c.email, c.latest.subject, c.latest.orderNumber, c.latest.question, c.latest.aiAnalysis].join(' ').toLowerCase();
+  return hay.indexOf(q) !== -1;
+}
+function userBusy(){
+  var a = document.activeElement;
+  if(a && (a.tagName === 'TEXTAREA' || (a.tagName === 'INPUT' && a.id !== 'q'))) return true;
+  var box = document.getElementById('composeBox');
+  var c = selected();
+  if(box && c){
+    var drafts = draftsFor(c.latest);
+    var same = drafts.some(function(d){ return d.text === box.value; });
+    if(!same) return true;
+  }
+  return false;
+}
 function setStatus(ok, text){
   document.getElementById('dot').className = 'dot ' + (ok ? 'live' : '');
   document.getElementById('statusText').textContent = text;
@@ -238,7 +334,11 @@ async function load(){
     leads = Array.isArray(data) ? data : [];
     document.getElementById('errBox').innerHTML = '';
     setStatus(true, 'Connected · ' + new Date().toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}));
-    group(); render();
+    group();
+    // Don't redraw under someone who is typing - a refresh mid-edit would
+    // throw their words away. Counts still update; the list catches up next tick.
+    if(userBusy()) return;
+    render();
   }catch(err){
     setStatus(false, 'Not connected');
     document.getElementById('errBox').innerHTML = '<div class="err"><b>Can\'t reach the backend.</b> ' + esc(err.message) +
@@ -267,15 +367,22 @@ function group(){
 }
 
 function render(){
-  document.getElementById('c-needs').textContent = convos.filter(function(c){ return c.needs; }).length;
-  document.getElementById('c-open').textContent = convos.filter(function(c){ return c.open; }).length;
+  var needs = convos.filter(function(c){ return c.needs; }).length;
+  var open = convos.filter(function(c){ return c.open; }).length;
+  document.getElementById('c-needs').textContent = needs;
+  document.getElementById('c-open').textContent = open;
   document.getElementById('c-total').textContent = convos.length;
+  document.getElementById('n-all').textContent = convos.length;
+  document.getElementById('n-needs').textContent = needs;
+  document.getElementById('n-open').textContent = open;
+  document.getElementById('n-sent').textContent = convos.length - open;
 
+  var q = query.trim().toLowerCase();
   var shown = convos.filter(function(c){
-    if(filter === 'needs') return c.needs;
-    if(filter === 'open') return c.open;
-    if(filter === 'sent') return !c.open;
-    return true;
+    if(filter === 'needs' && !c.needs) return false;
+    if(filter === 'open' && !c.open) return false;
+    if(filter === 'sent' && c.open) return false;
+    return matches(c, q);
   }).sort(function(a,b){
     if(a.needs !== b.needs) return a.needs ? -1 : 1;
     return new Date(b.latest.createdAt) - new Date(a.latest.createdAt);
@@ -283,15 +390,24 @@ function render(){
 
   var rows = document.getElementById('rows');
   if(!shown.length){
-    rows.innerHTML = '<div class="empty">' + (leads.length ? 'Nothing here.' : 'No conversations yet.') + '</div>';
+    var why = !leads.length ? 'No conversations yet.'
+      : q ? 'Nothing matches "' + esc(query.trim()) + '".'
+      : filter === 'needs' ? 'Nothing needs you right now.'
+      : filter === 'open' ? 'Everything has been answered.'
+      : filter === 'sent' ? 'No replies sent yet. Send one and it shows up here.'
+      : 'Nothing here.';
+    rows.innerHTML = '<div class="empty">' + why + '</div>';
   } else {
     rows.innerHTML = shown.map(function(c){
       var l = c.latest;
-      return '<div class="row' + (c.key === selectedKey ? ' sel' : '') + (c.open ? ' unread' : '') + '" data-k="' + esc(c.key) + '">' +
-        '<div class="av">' + esc(initials(c.name, c.email)) + '</div>' +
+      var photos = hasPhotos(l);
+      return '<div class="row' + (c.key === selectedKey ? ' sel' : '') + (c.open ? ' unread' : '') + (c.needs ? ' needs' : '') + '" data-k="' + esc(c.key) + '">' +
+        '<div class="' + avClass(c.email || c.key) + '">' + esc(initials(c.name, c.email)) + '</div>' +
         '<div class="mid"><div class="r1"><span class="nm">' + esc(c.name) + '</span><span class="tm">' + esc(when(l.createdAt)) + '</span></div>' +
-        '<div class="sn">' + (c.needs ? '<span class="flag" title="Needs you"></span>' : '') + esc(l.question || '') + '</div>' +
-        '<div class="sub">' + esc(l.subject || '') + (c.items.length > 1 ? ' · ' + c.items.length + ' emails' : '') + '</div></div></div>';
+        '<div class="sn">' + esc(l.question || '') + '</div>' +
+        (l.aiAnalysis ? '<div class="sum">' + esc(l.aiAnalysis) + '</div>' : '') +
+        '<div class="sub">' + statusChip(c) + (photos ? '<span class="chip photo">' + photos + ' photo' + (photos === 1 ? '' : 's') + '</span>' : '') +
+        '<span>' + esc(l.subject || '') + (c.items.length > 1 ? ' · ' + c.items.length + ' emails' : '') + '</span></div></div></div>';
     }).join('');
     Array.prototype.forEach.call(rows.querySelectorAll('.row'), function(el){
       el.onclick = function(){ selectedKey = el.getAttribute('data-k'); document.querySelector('.app').classList.add('showconvo'); render(); };
@@ -306,9 +422,36 @@ function selected(){ return convos.filter(function(c){ return c.key === selected
 // Email clients hard-wrap plain text at ~72 characters; unwrap those so the
 // bubble reflows, but keep real paragraph breaks.
 function unwrap(t){ return String(t || '').replace(/\r/g, '').replace(/([^\n])\n(?!\n)/g, '$1 '); }
-function bubble(cls, text, meta, who){
+function bubble(cls, text, meta, who, atts){
   return '<div class="m ' + cls + '">' + (who ? '<span class="who">' + esc(who) + '</span>' : '') + esc(unwrap(text)) +
-    (meta ? '<span class="t">' + esc(meta) + '</span>' : '') + '</div>';
+    pics(atts) + (meta ? '<span class="t">' + esc(meta) + '</span>' : '') + '</div>';
+}
+// Photos the customer attached. Images the import copied over render inline;
+// anything else (or a photo too big to copy) links to the file name only.
+var storedAtt = {};
+function attUrl(a){ return API_URL + '/api/att/' + encodeURIComponent(a.messageId) + '/' + encodeURIComponent(a.attachmentId) + '?token=' + encodeURIComponent(getToken()); }
+function pics(atts){
+  if(!Array.isArray(atts) || !atts.length) return '';
+  return '<div class="pics">' + atts.map(function(a){
+    var key = a.messageId + '/' + a.attachmentId;
+    var isImg = /^image\//i.test(a.mimeType || '');
+    if(isImg && storedAtt[key] !== false){
+      return '<a href="' + esc(attUrl(a)) + '" data-lb="' + esc(attUrl(a)) + '"><img src="' + esc(attUrl(a)) + '" alt="' + esc(a.filename) + '" loading="lazy" onerror="attMissing(this)" data-key="' + esc(key) + '"></a>';
+    }
+    return '<a class="file" title="' + esc(a.filename) + '"><span>&#128206; ' + esc(a.filename || 'attachment') + '</span></a>';
+  }).join('') + '</div>';
+}
+function attMissing(img){
+  storedAtt[img.getAttribute('data-key')] = false;
+  var a = img.parentNode;
+  a.className = 'file'; a.removeAttribute('href'); a.removeAttribute('data-lb');
+  a.innerHTML = '<span>&#128206; ' + esc(img.getAttribute('alt') || 'photo') + ' (not copied yet)</span>';
+}
+function openLightbox(src){
+  var lb = document.createElement('div'); lb.className = 'lightbox';
+  lb.innerHTML = '<img src="' + esc(src) + '">';
+  lb.onclick = function(){ document.body.removeChild(lb); };
+  document.body.appendChild(lb);
 }
 
 function renderConvo(){
@@ -319,10 +462,11 @@ function renderConvo(){
   var profile = latest.customerProfile;
   var kind = profile ? (Number(profile.totalOrders) > 1 ? 'Returning customer' : (Number(profile.totalOrders) === 1 ? 'Customer' : 'New')) : 'Not in Shopify';
 
-  var html = '<div class="chead"><button class="back" id="backBtn" title="Back to conversations">&#8249;</button><div class="av">' + esc(initials(c.name, c.email)) + '</div>' +
+  var html = '<div class="chead"><button class="back" id="backBtn" title="Back to conversations">&#8249;</button><div class="' + avClass(c.email || c.key) + '">' + esc(initials(c.name, c.email)) + '</div>' +
     '<div><div class="nm">' + esc(c.name) + '</div><div class="em">' + esc(c.email) + (latest.subject ? ' · ' + esc(latest.subject) : '') + '</div></div>' +
     '<span class="badge">' + esc(kind) + '</span><button class="custbtn" id="custBtn">Customer</button></div>';
 
+  if(latest.aiAnalysis) html += '<div class="summary"><b>Summary</b>' + esc(latest.aiAnalysis) + '</div>';
   html += '<div class="msgs" id="msgs">';
   var lastDay = '';
   c.items.forEach(function(l, idx){
@@ -332,13 +476,13 @@ function renderConvo(){
       html += '<button class="more" id="moreBtn">' + (historyOpen[c.key] ? 'Hide' : 'Show') + ' earlier conversation (' + hist.length + ')</button>';
       html += '<div class="hist' + (historyOpen[c.key] ? ' open' : '') + '">';
       hist.forEach(function(m){
-        html += bubble(m.mine ? 'us' : 'them', m.text, m.date || '', m.mine ? 'Crib Essentials' : (m.name || ''));
+        html += bubble(m.mine ? 'us' : 'them', m.text, m.date ? dayLabel(m.date) + ' ' + clock(m.date) : '', m.mine ? 'Crib Essentials' : (m.name || ''), m.attachments);
       });
       html += '</div>';
     }
     var d = dayLabel(l.createdAt);
     if(d !== lastDay){ html += '<div class="day">' + esc(d) + '</div>'; lastDay = d; }
-    html += bubble('them', l.question || '', clock(l.createdAt));
+    html += bubble('them', l.question || '', clock(l.createdAt), '', l.attachments);
     if(l.status === 'sent'){
       html += bubble('us', l.sentBody || l.aiResponse || '', 'Sent ' + clock(l.sentAt));
     } else if(idx < c.items.length - 1){
@@ -351,10 +495,10 @@ function renderConvo(){
   var drafts = draftsFor(latest);
   html += '<div class="compose">';
   if(latest.status === 'sent'){
-    html += '<div class="notice">Replied ' + esc(new Date(latest.sentAt).toLocaleString()) + '. A new email from them will reopen this conversation.</div>';
+    html += '<div class="notice sent">Replied ' + esc(new Date(latest.sentAt).toLocaleString()) + '. A new email from them will reopen this conversation.</div>';
   } else {
     if(needsMe(latest)){
-      html += '<div class="notice"><b>Needs you:</b> ' + esc(latest.flagReason || 'Claude could not finish this one — read the draft and fill in the answer before sending.') + '</div>';
+      html += '<div class="notice needs"><b>Needs you:</b> ' + esc(latest.flagReason || 'Claude could not finish this one — read the draft and fill in the answer before sending.') + '</div>';
     }
     if(drafts.length > 1){
       html += '<div class="tones" id="tones">' + drafts.map(function(d, i){
@@ -377,6 +521,9 @@ function renderConvo(){
 
   var msgs = document.getElementById('msgs');
   if(msgs) msgs.scrollTop = msgs.scrollHeight;
+  Array.prototype.forEach.call(el.querySelectorAll('[data-lb]'), function(a){
+    a.onclick = function(e){ e.preventDefault(); openLightbox(a.getAttribute('data-lb')); };
+  });
 
   var backBtn = document.getElementById('backBtn');
   if(backBtn){ backBtn.onclick = function(){ document.querySelector('.app').classList.remove('showconvo'); }; }
@@ -445,33 +592,86 @@ var showAllOrders = {};
 // Live Shopify lookups, one per email, so leads saved before the panel
 // existed still get their profile - and stale ones get refreshed.
 var liveCustomer = {};
-function fetchCustomer(email, key){
-  if(!email || liveCustomer[email]) return;
-  liveCustomer[email] = { loading: true };
-  fetch(API_URL + '/api/customer?email=' + encodeURIComponent(email), { headers: { 'x-dashboard-token': getToken() } })
+// Looks the person up by email, then by the order number they quoted, then
+// by name - people often check out with one address and write from another.
+function fetchCustomer(c){
+  var email = String(c.email || '').toLowerCase();
+  var key = email || c.key;
+  if(liveCustomer[key]) return;
+  liveCustomer[key] = { loading: true };
+  var l = c.latest;
+  var qs = '?email=' + encodeURIComponent(email) +
+    '&order=' + encodeURIComponent(l.orderNumber || '') +
+    '&name=' + encodeURIComponent(l.customerName || '');
+  fetch(API_URL + '/api/customer-search' + qs, { headers: { 'x-dashboard-token': getToken() } })
     .then(function(r){ return r.ok ? r.json() : null; })
-    .then(function(d){ liveCustomer[email] = d && d.ok ? { profile: d.profile, cart: d.cart } : { profile: null, cart: null, failed: !d }; })
-    .catch(function(){ liveCustomer[email] = { profile: null, cart: null, failed: true }; })
-    .then(function(){ if(selectedKey === key) renderCustomer(); });
+    .then(function(d){
+      liveCustomer[key] = d && d.ok
+        ? { profile: d.profile, cart: d.cart, candidates: d.candidates || [], matchedBy: d.matchedBy }
+        : { profile: null, cart: null, candidates: [], failed: !d };
+    })
+    .catch(function(){ liveCustomer[key] = { profile: null, cart: null, candidates: [], failed: true }; })
+    .then(function(){ if(selectedKey === c.key) renderCustomer(); });
+}
+// Manual lookup from the panel: an order number, an email, or a name.
+function lookupCustomer(c, term){
+  var key = String(c.email || '').toLowerCase() || c.key;
+  term = String(term || '').trim();
+  if(!term) return;
+  liveCustomer[key] = { loading: true };
+  renderCustomer();
+  var qs = term.indexOf('@') !== -1 ? '?email=' + encodeURIComponent(term.toLowerCase())
+    : /^#?\d{3,}$/.test(term) ? '?order=' + encodeURIComponent(term.replace(/^#/, ''))
+    : '?name=' + encodeURIComponent(term);
+  fetch(API_URL + '/api/customer-search' + qs, { headers: { 'x-dashboard-token': getToken() } })
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(d){
+      liveCustomer[key] = d && d.ok
+        ? { profile: d.profile, cart: d.cart, candidates: d.candidates || [], matchedBy: d.profile ? 'search' : null, searched: term }
+        : { profile: null, cart: null, candidates: [], failed: true, searched: term };
+    })
+    .catch(function(){ liveCustomer[key] = { profile: null, cart: null, candidates: [], failed: true, searched: term }; })
+    .then(function(){ if(selectedKey === c.key) renderCustomer(); });
+}
+function wireLookup(c){
+  var cc = document.getElementById('closeCust');
+  if(cc){ cc.onclick = function(){ document.querySelector('.app').classList.remove('showcust'); }; }
+  var f = document.getElementById('lookupForm');
+  if(f){ f.onsubmit = function(e){ e.preventDefault(); lookupCustomer(c, document.getElementById('lookupInput').value); }; }
+  Array.prototype.forEach.call(document.querySelectorAll('[data-cand]'), function(el){
+    el.onclick = function(){ lookupCustomer(c, el.getAttribute('data-cand')); };
+  });
+}
+function lookupBox(placeholder){
+  return '<form class="lookup" id="lookupForm"><input id="lookupInput" placeholder="' + esc(placeholder || 'Order #, email or name') + '"><button class="btn" type="submit">Find</button></form>';
+}
+function candList(cands){
+  if(!cands || !cands.length) return '';
+  return '<div class="cands"><div class="none" style="margin-bottom:4px">Could this be them?</div>' + cands.map(function(k){
+    return '<div class="cand" data-cand="' + esc(k.email || k.name) + '"><div class="' + avClass(k.email || k.name) + '">' + esc(initials(k.name, k.email)) + '</div>' +
+      '<div class="who"><b>' + esc(k.name || k.email) + '</b><span>' + esc(k.email || '') + (k.totalOrders != null ? ' · ' + esc(k.totalOrders) + ' order' + (Number(k.totalOrders) === 1 ? '' : 's') : '') + (k.location ? ' · ' + esc(k.location) : '') + '</span></div><span class="go">Use &#8250;</span></div>';
+  }).join('') + '</div>';
 }
 function renderCustomer(){
   var el = document.getElementById('cust');
   var c = selected();
   if(!c){ el.innerHTML = '<div class="none">Customer details show here.</div>'; return; }
   var l = c.latest;
-  var live = liveCustomer[String(c.email || '').toLowerCase()];
-  if(!live){ fetchCustomer(String(c.email || '').toLowerCase(), c.key); live = { loading: true }; }
+  var key = String(c.email || '').toLowerCase() || c.key;
+  var live = liveCustomer[key];
+  if(!live){ fetchCustomer(c); live = { loading: true }; }
   // Prefer the live lookup; fall back to what was saved with the lead.
-  var p = (live && !live.loading && live.profile) ? live.profile : l.customerProfile;
+  var p = (live && !live.loading && live.profile) ? live.profile : (live && live.searched ? null : l.customerProfile);
   var cart = (live && !live.loading) ? (live.cart || (live.profile ? null : l.cart)) : l.cart;
+  var closeBtn = '<button class="closecust" id="closeCust">&#8249; Back to conversation</button>';
   if(!p && live && live.loading){
-    el.innerHTML = '<button class="closecust" id="closeCust">&#8249; Back to conversation</button><div class="nm">' + esc(c.name) + '</div><div class="none">Looking up in Shopify…</div>';
-    var ccl = document.getElementById('closeCust');
-    if(ccl){ ccl.onclick = function(){ document.querySelector('.app').classList.remove('showcust'); }; }
+    el.innerHTML = closeBtn + '<div class="head"><div class="' + avClass(c.email || c.key) + '">' + esc(initials(c.name, c.email)) + '</div><div class="nm">' + esc(c.name) + '</div></div><div class="none">Looking up in Shopify…</div>';
+    wireLookup(c);
     return;
   }
-  var html = '<button class="closecust" id="closeCust">&#8249; Back to conversation</button><div class="nm">' + esc((p && p.name) || c.name) +
-    (p && p.id ? '<button class="edit" id="editCust">' + (editing.cust ? 'Cancel' : 'Edit') + '</button>' : '') + '</div>';
+  var html = closeBtn + '<div class="head"><div class="' + avClass((p && p.email) || c.email || c.key) + '">' + esc(initials((p && p.name) || c.name, c.email)) + '</div><div><div class="nm">' + esc((p && p.name) || c.name) +
+    (p && p.id ? '<button class="edit" id="editCust">' + (editing.cust ? 'Cancel' : 'Edit') + '</button>' : '') + '</div>' +
+    (p && p.email && p.email.toLowerCase() !== String(c.email || '').toLowerCase() ? '<div class="none">Shopify account: ' + esc(p.email) + '</div>' : '') + '</div></div>';
   if(p && p.id && editing.cust){
     html += '<div class="form" id="custForm">' +
       '<div class="two"><div><label>First name</label><input id="cf-first" value="' + esc(p.firstName || '') + '"></div>' +
@@ -481,19 +681,25 @@ function renderCustomer(){
       '<div class="acts"><button class="btn" id="cf-save">Save to Shopify</button><span class="msg" id="cf-msg"></span></div></div>';
   }
   if(!p){
-    html += '<div class="kind">Not found in Shopify</div>' +
+    html += '<div class="kind none">Not found in Shopify' + (live && live.searched ? ' for "' + esc(live.searched) + '"' : '') + '</div>' +
       '<div class="fact">' + ICON.mail + '<div class="v">' + esc(c.email) + '</div></div>' +
-      '<div class="none" style="margin-top:14px">No orders or cart under this email. They may have checked out with a different address.</div>';
+      (l.orderNumber ? '<div class="fact">' + ICON.cart + '<div class="v">Mentioned order ' + esc(l.orderNumber) + '<small>Not found under this email</small></div></div>' : '') +
+      '<div class="none" style="margin-top:12px">No orders under this email. They may have checked out with a different address, or it could be a TikTok Shop order.</div>' +
+      candList(live && live.candidates) +
+      '<h4>Look them up</h4>' + lookupBox('Order #, email or name');
     el.innerHTML = html;
-    var cc0 = document.getElementById('closeCust');
-    if(cc0){ cc0.onclick = function(){ document.querySelector('.app').classList.remove('showcust'); }; }
+    wireLookup(c);
     return;
   }
+  if(live && live.matchedBy && live.matchedBy !== 'email'){
+    html += '<div class="matched">Matched by ' + (live.matchedBy === 'order' ? 'the order number they mentioned' : 'your search') + '</div>';
+  }
   var n = Number(p.totalOrders) || 0;
-  html += '<div class="kind">' + (n > 1 ? 'Returning customer' : (n === 1 ? 'First order' : 'No orders yet')) + '</div>';
+  html += '<div class="kind' + (n > 1 ? ' ret' : '') + '">' + (n > 1 ? 'Returning customer' : (n === 1 ? 'First order' : 'No orders yet')) + '</div>';
   var da = daysAgo(p.since);
-  if(da !== null) html += '<div class="fact">' + ICON.cal + '<div class="v">Customer for ' + da + ' day' + (da === 1 ? '' : 's') + '</div></div>';
-  html += '<div class="fact">' + ICON.cart + '<div class="v">$' + esc(money(p.totalSpent)) + ' lifetime spend<small>' + n + ' order' + (n === 1 ? '' : 's') + '</small></div></div>';
+  html += '<div class="stats"><div class="stat"><b>' + n + '</b><span>order' + (n === 1 ? '' : 's') + '</span></div>' +
+    '<div class="stat"><b>$' + esc(money(p.totalSpent)) + '</b><span>lifetime</span></div>' +
+    '<div class="stat"><b>' + (da === null ? '—' : da + 'd') + '</b><span>customer for</span></div></div>';
   html += '<div class="fact">' + ICON.mail + '<div class="v">' + esc(p.email || c.email) + '</div></div>';
   if(p.phone) html += '<div class="fact">' + ICON.phone + '<div class="v">' + esc(p.phone) + '</div></div>';
   if(p.location) html += '<div class="fact">' + ICON.pin + '<div class="v">' + esc(p.location) + '</div></div>';
@@ -563,9 +769,9 @@ function renderCustomer(){
   } else {
     html += '<h4>Orders</h4><div class="none">No orders yet.</div>';
   }
+  html += '<h4>Look up someone else</h4>' + lookupBox('Order #, email or name');
   el.innerHTML = html;
-  var cc = document.getElementById('closeCust');
-  if(cc){ cc.onclick = function(){ document.querySelector('.app').classList.remove('showcust'); }; }
+  wireLookup(c);
   var va = document.getElementById('viewAll');
   if(va) va.onclick = function(){ showAllOrders[c.key] = !showAllOrders[c.key]; renderCustomer(); };
   Array.prototype.forEach.call(el.querySelectorAll('.ord.click'), function(card){
@@ -597,7 +803,7 @@ function fmtAddr(a){
   return [name, a.address1, a.address2, l3, a.countryCode !== 'US' ? a.countryCode : '', a.phone].filter(Boolean).join('\n');
 }
 function refreshCustomer(c){
-  delete liveCustomer[String(c.email || '').toLowerCase()];
+  delete liveCustomer[String(c.email || '').toLowerCase() || c.key];
   renderCustomer();
 }
 async function postJson(url, body){
@@ -703,9 +909,14 @@ async function sendReply(lead, btn){
 Array.prototype.forEach.call(document.querySelectorAll('.tab'), function(b){
   b.onclick = function(){
     Array.prototype.forEach.call(document.querySelectorAll('.tab'), function(x){ x.classList.remove('on'); });
-    b.classList.add('on'); filter = b.getAttribute('data-f'); render();
+    b.classList.add('on'); filter = b.getAttribute('data-f');
+    // On a phone the list is hidden while a conversation is open; a tab tap
+    // means "show me the list".
+    document.querySelector('.app').classList.remove('showconvo');
+    render();
   };
 });
+document.getElementById('q').addEventListener('input', function(e){ query = e.target.value || ''; render(); });
 
 window.onerror = function(msg, src, line){
   var b = document.getElementById('errBox');
