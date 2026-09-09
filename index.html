@@ -187,12 +187,15 @@
   .rem .del:hover{color:var(--accent)}
   .rshow{display:block;width:100%;background:none;border:0;padding:12px;font:inherit;font-size:12.5px;color:var(--muted);cursor:pointer;text-decoration:underline}
   .addr{margin-bottom:10px;border:1px solid var(--line);border-radius:10px;background:var(--soft);padding:10px 12px}
-  .addr .ah{display:flex;align-items:center;gap:8px;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:8px}
-  .addr .ah b{color:var(--ink);font-weight:600;text-transform:none;letter-spacing:0;font-size:13px}
-  .addr .grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .addr .ah{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint)}
+  .addr .ah b{color:var(--ink);font-weight:500;text-transform:none;letter-spacing:0;font-size:13.5px;flex:1 1 200px;min-width:0}
+  .addr .alink{background:none;border:0;padding:0;font:inherit;font-size:12px;color:var(--muted);text-decoration:underline;cursor:pointer;text-transform:none;letter-spacing:0}
+  .addr .grid{display:none;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}
+  .addr.open .grid{display:grid}
   .addr input,.addr select{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:7px;font:inherit;font-size:13px;background:var(--panel);color:var(--ink)}
   .addr .full{grid-column:1 / -1}
   .addr .ab{display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap}
+  .addr .ab select{flex:1 1 140px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;font:inherit;font-size:13px;background:var(--panel);color:var(--ink)}
   .addr .ab .btn{padding:7px 13px;font-size:13px}
   .addr .am{font-size:12px;color:var(--muted)}
   .addr .am.good{color:var(--good)}
@@ -219,7 +222,7 @@
   .tone.edited{border-style:dashed}
   .box{border:1px solid #3a3a40;border-radius:10px;overflow:hidden;background:var(--soft)}
   .box.off{border-color:var(--line)}
-  .box textarea{width:100%;min-height:96px;max-height:40vh;padding:12px 14px;border:0;resize:vertical;font:inherit;color:var(--ink);background:transparent;display:block}
+  .box textarea{width:100%;min-height:84px;max-height:40vh;padding:12px 14px;border:0;resize:vertical;font:inherit;color:var(--ink);background:transparent;display:block}
   .box textarea:focus{outline:0}
   .box textarea::placeholder{color:var(--faint)}
   .bar{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
@@ -313,6 +316,16 @@
   .addr{font-size:13px;color:var(--muted);white-space:pre-line;margin-top:6px}
   .tokform{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
   .tokform input{flex:1;min-width:220px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;background:var(--soft);color:var(--ink)}
+  @media (max-width:760px){
+    /* Phone: the reply area may not swallow the conversation. */
+    .compose{max-height:58vh;overflow-y:auto;padding:10px 12px 12px}
+    .msgs{padding:12px 12px;min-height:30vh}
+    .remind .rlink{font-size:12px;padding:5px 10px}
+    .notice{font-size:12.5px;padding:8px 10px}
+    .tones{gap:4px}
+    .tone{font-size:11.5px;padding:4px 9px}
+    .addr{padding:8px 10px}
+  }
 </style>
 </head>
 <body>
@@ -348,7 +361,7 @@ var API_URL = (/^https?:$/.test(location.protocol) && !/netlify\.app$/.test(loca
   ? location.origin : 'https://crib-essentials-email-agent.onrender.com';
 
 var leads = [], convos = [], filter = 'all', query = '', selectedKey = null, historyOpen = {}, noToken = false;
-var reminders = [], showDone = false, remindOpen = {}, sumOpen = {}, pendingPhotos = {}, ownText = {};
+var reminders = [], showDone = false, remindOpen = {}, sumOpen = {}, pendingPhotos = {}, ownText = {}, addrOpen = {};
 
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
   return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
@@ -742,7 +755,9 @@ function addressBlock(c){
   }
   var orders = orderChoices(l);
   var v = function(x){ return esc(x || ''); };
-  return '<div class="addr" id="addrBox"><div class="ah">Customer asked for a new shipping address <b>&#8594; update it in Shopify</b></div>' +
+  var line = [a.address1, a.address2, a.city, [a.state, a.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+  return '<div class="addr' + (addrOpen[c.key] ? ' open' : '') + '" id="addrBox">' +
+    '<div class="ah"><span>New shipping address</span><b>' + esc(line) + '</b><button type="button" class="alink" id="ad-edit">' + (addrOpen[c.key] ? 'done' : 'edit') + '</button></div>' +
     '<div class="grid">' +
     '<input id="ad-first" placeholder="First name" value="' + v(first) + '"><input id="ad-last" placeholder="Last name" value="' + v(last) + '">' +
     '<input class="full" id="ad-a1" placeholder="Street address" value="' + v(a.address1) + '">' +
@@ -752,10 +767,12 @@ function addressBlock(c){
     '</div><div class="ab">' +
     (orders.length ? '<select id="ad-order">' + orders.map(function(o){ return '<option value="' + esc(o.gid) + '">' + esc(o.name) + (o.fulfillment ? ' · ' + esc(pretty(o.fulfillment)) : '') + '</option>'; }).join('') + '</select>' +
       '<button class="btn" id="ad-save" type="button">Update address</button>'
-      : '<span class="am">No order found for this customer - open the customer panel and look them up first.</span>') +
+      : '<span class="am">No order found - look the customer up in the customer panel first.</span>') +
     '<span class="am" id="ad-msg"></span></div></div>';
 }
 function wireAddress(c){
+  var edit = document.getElementById('ad-edit');
+  if(edit){ edit.onclick = function(){ addrOpen[c.key] = !addrOpen[c.key]; var b = document.getElementById('addrBox'); b.classList.toggle('open', addrOpen[c.key]); edit.textContent = addrOpen[c.key] ? 'done' : 'edit'; }; }
   var btn = document.getElementById('ad-save');
   if(!btn) return;
   var l = c.latest;
