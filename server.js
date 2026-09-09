@@ -1153,6 +1153,7 @@ function polishReply(parsed, ctx) {
     reply = `${reply}\n\n- Crib Essentials`;
   }
   parsed.response = reply;
+
   const body = reply.replace(/- Crib Essentials\s*$/, '');
   const hits = [];
   for (const [re, why] of GUESS_PATTERNS) {
