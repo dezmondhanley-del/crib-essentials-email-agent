@@ -10,11 +10,7 @@ app.set('trust proxy', 1);
 app.use(cors());
 // Customer photos arrive base64-encoded from the Gmail import, so the body
 // limit is well above Express's 100kb default.
-app.use(express.json({
-  limit: '12mb',
-  verify: (req, res, buf) => { req.rawBody = buf; },
-}));
-app.use(require('./instagram').buildRouter({}));
+app.use(express.json({ limit: '12mb' }));
 
 const anthropic = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
 
@@ -710,6 +706,7 @@ const ORDER_QUERY = `
           name
           email
           createdAt
+          customer { displayName }
           displayFinancialStatus
           displayFulfillmentStatus
           tags
@@ -728,7 +725,7 @@ const ORDER_QUERY = `
             }
           }
           fulfillments(first: 5) { createdAt trackingInfo { number url company } }
-          shippingAddress { city provinceCode countryCode }
+          shippingAddress { firstName lastName city provinceCode countryCode }
         }
       }
     }
@@ -761,6 +758,8 @@ async function getShopifyOrder(orderNumber) {
       orderNumber: raw,
       orderName: o.name,
       email: String(o.email || '').toLowerCase(),
+      customerName: (o.customer && o.customer.displayName) || '',
+      shipToName: o.shippingAddress ? `${o.shippingAddress.firstName || ''} ${o.shippingAddress.lastName || ''}`.trim() : '',
       status: o.displayFinancialStatus,
       fulfillmentStatus: o.displayFulfillmentStatus,
       tags: o.tags || [],
@@ -789,6 +788,21 @@ async function getShopifyOrder(orderNumber) {
     console.error('Shopify order lookup failed:', error.message);
     return null;
   }
+}
+
+// "Cherie Mikell" vs "cherie mikell" / "Mikell, Cherie" / "C. Mikell": same
+// person for our purposes. Needs the surname and at least the first initial.
+function namesMatch(a, b) {
+  const clean = (n) => String(n || '').toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(Boolean).filter((w) => !['iii', 'ii', 'jr', 'sr'].includes(w));
+  const wa = clean(a), wb = clean(b);
+  if (wa.length < 2 || wb.length < 2) return false;
+  const shared = wa.filter((w) => w.length > 1 && wb.includes(w)).length;
+  if (shared >= 2) return true;
+  const lastA = wa[wa.length - 1], lastB = wb[wb.length - 1];
+  const firstA = wa[0], firstB = wb[0];
+  const sameLast = lastA === lastB;
+  const sameFirst = firstA === firstB || ((firstA.length === 1 || firstB.length === 1) && firstA[0] === firstB[0]);
+  return sameLast && sameFirst;
 }
 
 function daysSince(iso) {
@@ -1255,7 +1269,13 @@ app.post('/api/process-email', async (req, res) => {
       const ownsByRecord = customer && (customer.orders || []).some(
         (o) => String(o.name).replace(/^#/, '') === String(shopifyData.orderNumber)
       );
-      if (!ownsByEmail && !ownsByRecord) {
+      // Same person, different inbox: "cheriemikell@me.com" writing about an
+      // order placed as "cheriemikell@mac.com", or the sender's name matching
+      // the name on the order. Good enough to treat as theirs.
+      const local = (e) => String(e || '').split('@')[0].replace(/[^a-z0-9]/g, '');
+      const ownsByLocalPart = local(sender).length >= 6 && local(sender) === local(shopifyData.email);
+      const ownsByName = namesMatch(customerName, shopifyData.customerName) || namesMatch(customerName, shopifyData.shipToName);
+      if (!ownsByEmail && !ownsByRecord && !ownsByLocalPart && !ownsByName) {
         orderMismatch = shopifyData.orderNumber;
         shopifyData = null;
       }
@@ -2116,6 +2136,21 @@ app.get('/api/import-status', async (req, res) => {
   }
 });
 
+// Which Shopify permissions the app actually has right now - so a missing
+// scope shows up on the health page instead of as a mystery "not found".
+let scopeCache = { at: 0, scopes: null, error: null };
+async function shopifyScopes() {
+  if (Date.now() - scopeCache.at < 5 * 60 * 1000) return scopeCache;
+  try {
+    const data = await shopifyGraphQL('{ currentAppInstallation { accessScopes { handle } } }', {});
+    const scopes = ((data.currentAppInstallation || {}).accessScopes || []).map((s) => s.handle).sort();
+    scopeCache = { at: Date.now(), scopes, error: null };
+  } catch (err) {
+    scopeCache = { at: Date.now(), scopes: null, error: err.message };
+  }
+  return scopeCache;
+}
+
 app.get('/api/health', async (req, res) => {
   let leadCount = memoryLeads.length;
   if (dbReady && Lead) {
@@ -2125,9 +2160,14 @@ app.get('/api/health', async (req, res) => {
       /* fall through to memory count */
     }
   }
+  const sc = await shopifyScopes();
+  const want = ['read_all_orders', 'write_orders', 'write_customers', 'write_fulfillments', 'read_returns', 'write_returns'];
   res.json({
     status: 'ok',
-    version: 'v14.2 - answer from order data first',
+    version: 'v14.3 - same person on a different email is still the customer',
+    shopifyScopes: sc.scopes,
+    shopifyScopesMissing: sc.scopes ? want.filter((w) => !sc.scopes.includes(w)) : null,
+    shopifyScopeError: sc.error,
     storage: dbReady ? 'mongodb (persistent)' : 'in-memory (resets on restart)',
     dbError: dbError || null,
     leadsStored: leadCount,
