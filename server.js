@@ -51,6 +51,11 @@ const leadSchema = new mongoose.Schema(
     // out of the main list. Dezmond can flip it from the dashboard.
     audience: { type: String, default: 'customer' },
     audienceSetBy: String,
+    // A shipping address the customer asked us to switch to, split into fields
+    // by the model, so the Inbox can apply it to the order in one tap.
+    requestedAddress: Object,
+    addressUpdatedAt: Date,
+    addressUpdatedOrder: String,
     // Three ways of saying the same thing. drafts[0] is always the vetted
     // original; the others are tone rewrites that may not add facts.
     drafts: [{ tone: String, label: String, text: String }],
@@ -204,6 +209,12 @@ function sameMessage(a, b) {
   const norm = (t) => String(t || '').toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 120);
   const qa = norm(a && a.question), qb = norm(b && b.question);
   return Boolean(qa) && qa === qb;
+}
+function cleanRequestedAddress(a) {
+  if (!a || typeof a !== 'object') return null;
+  const pick = (k) => String(a[k] === undefined || a[k] === null ? '' : a[k]).trim().slice(0, 120);
+  const out = { address1: pick('address1'), address2: pick('address2'), city: pick('city'), state: pick('state'), zip: pick('zip'), country: pick('country') || 'US' };
+  return out.address1 || out.address2 || out.city || out.zip ? out : null;
 }
 function withAudience(lead) {
   if (!lead) return lead;
@@ -703,6 +714,7 @@ const ORDER_QUERY = `
     orders(first: 1, query: $q) {
       edges {
         node {
+          id
           name
           email
           createdAt
@@ -757,6 +769,7 @@ async function getShopifyOrder(orderNumber) {
     return {
       orderNumber: raw,
       orderName: o.name,
+      gid: o.id,
       email: String(o.email || '').toLowerCase(),
       customerName: (o.customer && o.customer.displayName) || '',
       shipToName: o.shippingAddress ? `${o.shippingAddress.firstName || ''} ${o.shippingAddress.lastName || ''}`.trim() : '',
@@ -1055,8 +1068,11 @@ Respond with ONLY raw JSON, no markdown fences:
   "productKeywords": ["product names or types mentioned, else empty array"],
   "needsHuman": true or false,
   "flagReason": "if needsHuman is true, a few words on what Dezmond needs to do; else null",
-  "audience": "customer" | "other"
+  "audience": "customer" | "other",
+  "newAddress": null or {"address1": "street and number", "address2": "apt/unit or empty", "city": "", "state": "two-letter code if US, else the region name", "zip": "", "country": "two-letter code, US if not stated"}
 }
+
+newAddress is ONLY for a customer asking to change, correct or add to the shipping address on an order (new street, apartment number, city, zip). Copy exactly what they wrote into the fields - fix nothing, guess nothing; leave a field empty if they did not give it. For anything else it is null.
 
 audience is "customer" for anyone who has bought, is asking about an order, or is asking about buying - even if they are angry or vague. audience is "other" for everything that is not a customer: vendors, agencies and freelancers pitching services (marketing, SEO, ads, packaging, manufacturing, software, web design), influencer / creator / collab / partnership requests, job seekers, wholesale and reseller pitches from businesses, newsletters and marketing blasts, cold outreach, spam, and automated notifications. If someone pitches a service AND asks about buying, they are "customer".
 
@@ -1334,6 +1350,7 @@ app.post('/api/process-email', async (req, res) => {
       flagReason: flagReason,
       audience: (final.audience === 'other' || initial.audience === 'other') ? 'other'
         : (final.audience === 'customer' ? 'customer' : guessAudience(subject, body, from)),
+      requestedAddress: cleanRequestedAddress(final.newAddress || initial.newAddress),
       drafts: drafts,
       rawBody: String(rawBody),
       thread: threadMsgs,
@@ -1820,13 +1837,19 @@ const ORDER_ADDRESS_MUTATION = `
 app.post('/api/orders/address', async (req, res) => {
   if (!checkToken(req, res)) return;
   try {
-    const { orderId, address } = req.body || {};
+    const { orderId, address, leadId } = req.body || {};
     if (!orderId || !address) return res.status(400).json({ error: 'orderId and address are required' });
     const input = { id: orderId, shippingAddress: cleanAddress(address) };
     const data = await shopifyGraphQL(ORDER_ADDRESS_MUTATION, { input });
     const errs = (data.orderUpdate && data.orderUpdate.userErrors) || [];
     if (errs.length) return res.status(400).json({ error: errs.map((e) => e.message).join('; ') });
-    res.json({ ok: true, order: data.orderUpdate.order });
+    const order = data.orderUpdate.order;
+    if (leadId) {
+      const patch = { addressUpdatedAt: new Date(), addressUpdatedOrder: order && order.name };
+      if (dbReady && Lead) await Lead.findByIdAndUpdate(leadId, patch).catch(() => {});
+      else { const m = memoryLeads.find((l) => l._id === leadId); if (m) Object.assign(m, patch); }
+    }
+    res.json({ ok: true, order });
   } catch (err) {
     console.error('Order address update failed:', err.message);
     res.status(500).json({ error: explainShopifyError(err) });
@@ -2164,7 +2187,7 @@ app.get('/api/health', async (req, res) => {
   const want = ['read_all_orders', 'write_orders', 'write_customers', 'write_fulfillments', 'read_returns', 'write_returns'];
   res.json({
     status: 'ok',
-    version: 'v14.3 - same person on a different email is still the customer',
+    version: 'v14.4 - one-tap address update',
     shopifyScopes: sc.scopes,
     shopifyScopesMissing: sc.scopes ? want.filter((w) => !sc.scopes.includes(w)) : null,
     shopifyScopeError: sc.error,
