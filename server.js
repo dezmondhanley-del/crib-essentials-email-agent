@@ -10,7 +10,11 @@ app.set('trust proxy', 1);
 app.use(cors());
 // Customer photos arrive base64-encoded from the Gmail import, so the body
 // limit is well above Express's 100kb default.
-app.use(express.json({ limit: '12mb' }));
+app.use(express.json({
+  limit: '12mb',
+  verify: (req, res, buf) => { req.rawBody = buf; },
+}));
+app.use(require('./instagram').buildRouter({}));
 
 const anthropic = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
 
