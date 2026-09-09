@@ -122,10 +122,28 @@ const reminderSchema = new mongoose.Schema(
 let Reminder = null;
 const memoryReminders = [];
 
+// Pieces of a big photo on their way in. They live in the database (not
+// memory) so a redeploy mid-upload does not lose the picture; Mongo throws
+// them away after an hour.
+const chunkSchema = new mongoose.Schema(
+  {
+    messageId: String,
+    attachmentId: String,
+    chunkIndex: Number,
+    chunkCount: Number,
+    data: String,
+    createdAt: { type: Date, default: Date.now, expires: 3600 },
+  },
+  { versionKey: false }
+);
+chunkSchema.index({ messageId: 1, attachmentId: 1, chunkIndex: 1 }, { unique: true });
+let AttachmentChunk = null;
+
 if (MONGODB_URI) {
   Lead = mongoose.model('Lead', leadSchema);
   Attachment = mongoose.model('Attachment', attachmentSchema);
   Reminder = mongoose.model('Reminder', reminderSchema);
+  AttachmentChunk = mongoose.model('AttachmentChunk', chunkSchema);
   mongoose
     .connect(MONGODB_URI, { serverSelectionTimeoutMS: 8000 })
     .then(() => {
@@ -1135,7 +1153,6 @@ function polishReply(parsed, ctx) {
     reply = `${reply}\n\n- Crib Essentials`;
   }
   parsed.response = reply;
-
   const body = reply.replace(/- Crib Essentials\s*$/, '');
   const hits = [];
   for (const [re, why] of GUESS_PATTERNS) {
@@ -1926,19 +1943,32 @@ app.post('/api/attachments', async (req, res) => {
     const chunkIndex = Math.max(0, Number(req.body.chunkIndex) || 0);
     let b64 = String(data);
     if (chunkCount > 1) {
-      const key = pendingKey(messageId, attachmentId);
-      const entry = pendingChunks.get(key) || { parts: new Array(chunkCount).fill(null), startedAt: Date.now() };
-      entry.parts[chunkIndex] = b64;
-      pendingChunks.set(key, entry);
-      const have = entry.parts.filter((p) => p !== null).length;
-      if (have < chunkCount) return res.json({ ok: true, pending: true, have, chunkCount });
-      pendingChunks.delete(key);
-      b64 = entry.parts.join('');
+      const sel = { messageId: String(messageId), attachmentId: String(attachmentId) };
+      if (AttachmentChunk) {
+        await AttachmentChunk.findOneAndUpdate({ ...sel, chunkIndex }, { ...sel, chunkIndex, chunkCount, data: b64, createdAt: new Date() }, { upsert: true });
+        const rows = await AttachmentChunk.find(sel, { chunkIndex: 1, data: 1 }).lean();
+        const haveIdx = new Set(rows.map((r) => r.chunkIndex));
+        const missing = [];
+        for (let i = 0; i < chunkCount; i++) if (!haveIdx.has(i)) missing.push(i);
+        if (missing.length) return res.json({ ok: true, pending: true, have: haveIdx.size, chunkCount, missing });
+        b64 = rows.sort((a, b) => a.chunkIndex - b.chunkIndex).map((r) => r.data).join('');
+        AttachmentChunk.deleteMany(sel).catch(() => {});
+      } else {
+        const key = pendingKey(messageId, attachmentId);
+        const entry = pendingChunks.get(key) || { parts: new Array(chunkCount).fill(null), startedAt: Date.now() };
+        entry.parts[chunkIndex] = b64;
+        pendingChunks.set(key, entry);
+        const missing = [];
+        entry.parts.forEach((p, i) => { if (p === null) missing.push(i); });
+        if (missing.length) return res.json({ ok: true, pending: true, have: chunkCount - missing.length, chunkCount, missing });
+        pendingChunks.delete(key);
+        b64 = entry.parts.join('');
+      }
     }
 
     const buf = Buffer.from(b64.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
     if (!buf.length) return res.status(400).json({ error: 'Empty file' });
-    if (buf.length > 8 * 1024 * 1024) return res.status(413).json({ error: 'File too large' });
+    if (buf.length > 12 * 1024 * 1024) return res.status(413).json({ error: 'File too large' });
     await Attachment.findOneAndUpdate(
       { messageId: String(messageId), attachmentId: String(attachmentId) },
       { threadId: String(threadId || ''), filename: String(filename || 'file'), mimeType: String(mimeType || 'application/octet-stream'), size: buf.length, data: buf },
@@ -1947,6 +1977,28 @@ app.post('/api/attachments', async (req, res) => {
     res.json({ ok: true, bytes: buf.length });
   } catch (err) {
     console.error('Attachment save failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// "Fetch photos" / re-run from the Inbox: asks the import workflow to pull the
+// thread from Gmail again (text + pictures) and refresh this conversation.
+const IMPORT_TRIGGER_URL = process.env.IMPORT_TRIGGER_URL || 'https://hooks.zapier.com/hooks/catch/25042915/CLEQD3rhASWPg1l0b/';
+app.post('/api/leads/:id/refetch', async (req, res) => {
+  if (!checkToken(req, res)) return;
+  try {
+    const lead = await findLead(req.params.id);
+    if (!lead) return res.status(404).json({ error: 'Not found' });
+    if (!lead.threadId || /^ig:/.test(lead.threadId)) return res.status(400).json({ error: 'This conversation has no Gmail thread to fetch from.' });
+    const r = await fetch(IMPORT_TRIGGER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ threadId: lead.threadId, customerEmail: lead.email, customerName: lead.customerName, subject: lead.subject }),
+    });
+    const t = await r.text().catch(() => '');
+    if (!r.ok) return res.status(502).json({ error: `Import trigger returned ${r.status}: ${t.slice(0, 200)}` });
+    res.json({ ok: true, started: true });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
@@ -2191,7 +2243,7 @@ app.get('/api/health', async (req, res) => {
   const want = ['read_all_orders', 'write_orders', 'write_customers', 'write_fulfillments', 'read_returns', 'write_returns'];
   res.json({
     status: 'ok',
-    version: 'v14.5 - Instagram DM router mounted again',
+    version: 'v14.6 - photo pieces saved in the database; fetch-photos button',
     shopifyScopes: sc.scopes,
     shopifyScopesMissing: sc.scopes ? want.filter((w) => !sc.scopes.includes(w)) : null,
     shopifyScopeError: sc.error,
