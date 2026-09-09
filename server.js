@@ -10,7 +10,11 @@ app.set('trust proxy', 1);
 app.use(cors());
 // Customer photos arrive base64-encoded from the Gmail import, so the body
 // limit is well above Express's 100kb default.
-app.use(express.json({ limit: '12mb' }));
+app.use(express.json({
+  limit: '12mb',
+  // instagram.js verifies Meta's signature against the exact bytes received.
+  verify: (req, res, buf) => { req.rawBody = buf; },
+}));
 
 const anthropic = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
 
@@ -2187,7 +2191,7 @@ app.get('/api/health', async (req, res) => {
   const want = ['read_all_orders', 'write_orders', 'write_customers', 'write_fulfillments', 'read_returns', 'write_returns'];
   res.json({
     status: 'ok',
-    version: 'v14.4 - one-tap address update',
+    version: 'v14.5 - Instagram DM router mounted again',
     shopifyScopes: sc.scopes,
     shopifyScopesMissing: sc.scopes ? want.filter((w) => !sc.scopes.includes(w)) : null,
     shopifyScopeError: sc.error,
@@ -2222,5 +2226,15 @@ app.get(['/', '/inbox'], (req, res) => {
   res.set('Cache-Control', 'no-store');
   res.sendFile(file);
 });
+
+// Instagram DMs come in through instagram.js (its own file, its own Mongo
+// collections) and are answered by the same /api/process-email pipeline.
+// Keep this mount when editing server.js - the DM agent is dead without it.
+try {
+  app.use(require('./instagram').buildRouter({ selfUrl: `http://127.0.0.1:${PORT}` }));
+  console.log('Instagram DM router mounted');
+} catch (err) {
+  console.error('Instagram DM router not mounted:', err.message);
+}
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
