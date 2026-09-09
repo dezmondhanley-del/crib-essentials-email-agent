@@ -149,6 +149,8 @@
   .m.draft .t,.m.draft .who{color:var(--faint)}
   .pics{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
   .pics a{display:block;border-radius:10px;overflow:hidden;border:1px solid var(--line);background:var(--soft)}
+  .pics .fetch{border:1px dashed var(--line);border-radius:10px;background:transparent;color:var(--muted);font:inherit;font-size:12px;padding:8px 10px;cursor:pointer}
+  .pics .fetch:hover{color:var(--ink);border-color:var(--muted)}
   .pics img{display:block;width:120px;height:120px;object-fit:cover}
   .pics .file{display:flex;align-items:center;gap:6px;padding:8px 10px;font-size:12px;color:var(--ink);text-decoration:none;max-width:200px}
   .pics .file span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -561,6 +563,8 @@ function bubble(cls, text, meta, who, atts){
 // anything else (or a photo too big to copy) links to the file name only.
 var storedAtt = {};
 function attUrl(a){ return API_URL + '/api/att/' + encodeURIComponent(a.messageId) + '/' + encodeURIComponent(a.attachmentId) + '?token=' + encodeURIComponent(getToken()); }
+var picThread = '';
+function gmailUrl(threadId){ return 'https://mail.google.com/mail/u/0/#all/' + encodeURIComponent(threadId || ''); }
 function pics(atts){
   if(!Array.isArray(atts) || !atts.length) return '';
   return '<div class="pics">' + atts.map(function(a){
@@ -569,14 +573,34 @@ function pics(atts){
     if(isImg && storedAtt[key] !== false){
       return '<a href="' + esc(attUrl(a)) + '" data-lb="' + esc(attUrl(a)) + '"><img src="' + esc(attUrl(a)) + '" alt="' + esc(a.filename) + '" loading="lazy" onerror="attMissing(this)" data-key="' + esc(key) + '"></a>';
     }
-    return '<a class="file" title="' + esc(a.filename) + '"><span>&#128206; ' + esc(a.filename || 'attachment') + '</span></a>';
-  }).join('') + '</div>';
+    return missingChip(a.filename, isImg);
+  }).join('') + (atts.some(function(a){ return /^image\//i.test(a.mimeType || '') && storedAtt[a.messageId + '/' + a.attachmentId] === false; }) ? fetchBtn() : '') + '</div>';
 }
+// A photo we could not copy: open it in Gmail (same mailbox), or pull it again.
+function missingChip(name, isImg){
+  return '<a class="file" href="' + esc(gmailUrl(picThread)) + '" target="_blank" rel="noopener" title="Open this email in Gmail to see the ' + (isImg ? 'photo' : 'file') + '"><span>&#128206; ' + esc(name || 'attachment') + ' · open in Gmail</span></a>';
+}
+function fetchBtn(){ return '<button type="button" class="file fetch" id="fetchPhotos" title="Pull the photos from Gmail again">&#8635; Fetch photos</button>'; }
 function attMissing(img){
   storedAtt[img.getAttribute('data-key')] = false;
-  var a = img.parentNode;
-  a.className = 'file'; a.removeAttribute('href'); a.removeAttribute('data-lb');
-  a.innerHTML = '<span>&#128206; ' + esc(img.getAttribute('alt') || 'photo') + ' (not copied yet)</span>';
+  var a = img.parentNode, wrap = a.parentNode;
+  a.outerHTML = missingChip(img.getAttribute('alt') || 'photo', true);
+  if(wrap && !wrap.querySelector('#fetchPhotos')){ wrap.insertAdjacentHTML('beforeend', fetchBtn()); wireFetch(); }
+}
+function wireFetch(){
+  var b = document.getElementById('fetchPhotos');
+  if(!b || b.onclick) return;
+  b.onclick = async function(){
+    var c = selected(); if(!c) return;
+    b.disabled = true; b.textContent = 'Fetching…';
+    try{
+      await postJson('/api/leads/' + encodeURIComponent(c.latest._id) + '/refetch', {});
+      b.textContent = 'Pulling from Gmail - photos appear here in about a minute';
+      // Forget the "missing" marks so the next refresh tries the images again.
+      Object.keys(storedAtt).forEach(function(k){ delete storedAtt[k]; });
+      setTimeout(function(){ load(); }, 60000);
+    }catch(err){ b.disabled = false; b.textContent = 'Fetch failed: ' + err.message; }
+  };
 }
 function openLightbox(src){
   var lb = document.createElement('div'); lb.className = 'lightbox';
@@ -836,6 +860,7 @@ function renderConvo(){
   var profile = latest.customerProfile;
   var kind = profile ? (Number(profile.totalOrders) > 1 ? 'Returning customer' : (Number(profile.totalOrders) === 1 ? 'Customer' : 'New')) : 'Not in Shopify';
 
+  picThread = latest.threadId || '';
   var html = '<div class="chead"><button class="back" id="backBtn" title="Back to conversations">&#8249;</button><div class="' + avClass(c.email || c.key) + '">' + esc(initials(c.name, c.email)) + '</div>' +
     '<div class="who"><div class="nm">' + esc(c.name) + '</div><div class="em">' + esc(c.email) + (latest.subject ? ' · ' + esc(latest.subject) : '') + '</div></div>' +
     '<span class="badge">' + esc(c.other ? 'Not a customer' : kind) + '</span>' +
@@ -922,6 +947,7 @@ function renderConvo(){
   wireRemind(c);
   wireAddress(c);
   wirePhotos(c);
+  wireFetch();
 
   var sendBtn = document.getElementById('sendBtn');
   if(sendBtn){
