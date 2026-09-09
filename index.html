@@ -7,31 +7,35 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="icon" href="/icon-192.png">
-<meta name="theme-color" content="#111111">
+<meta name="theme-color" content="#0a0a0b">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="CE Inbox">
 <style>
   :root{
-    /* Black / white / grey base with one warm accent (clay) - change --accent to retheme. */
-    --bg:#f4f3f1; --panel:#ffffff; --ink:#151515; --muted:#5f5f5f; --faint:#8d8d8d;
-    --line:#e6e4e1; --soft:#f2f0ed; --bubble:#f1efec; --black:#151515;
-    --accent:#c4693d; --accent-soft:#f8ebe4; --accent-ink:#8f4523;
-    --good:#2f7d4f; --good-soft:#e6f3ea; --warn:#b26a00; --warn-soft:#fff3df;
-    --sky:#2f5f9e; --sky-soft:#e6eef9; --plum:#6d3f7a; --plum-soft:#f3eaf6; --teal:#1f6b6b; --teal-soft:#e2f2f1;
-    --top:#111111; --top-ink:#ffffff;
-    --r:14px;
+    /* Dark, minimal. One warm accent (clay); everything else is ink on charcoal. */
+    color-scheme:dark;
+    --bg:#0f0f10; --panel:#151516; --ink:#ebe8e2; --muted:#a09d96; --faint:#6e6c67;
+    --line:#26262a; --soft:#1d1d20; --bubble:#202024; --black:#ebe8e2;
+    --accent:#c4693d; --accent-soft:#2a1f19; --accent-ink:#e39a76;
+    --good:#7bbf95; --good-soft:#172219; --warn:#d9a24a; --warn-soft:#262015;
+    --sky:#8fb0da; --sky-soft:#181d25; --plum:#b899c4; --plum-soft:#211b25; --teal:#7fb8b3; --teal-soft:#152021;
+    --top:#0a0a0b; --top-ink:#ebe8e2;
+    --serif:"Iowan Old Style","Palatino Linotype","Book Antiqua",Palatino,Georgia,"Times New Roman",serif;
+    --r:10px;
   }
   *{box-sizing:border-box}
   html,body{height:100%}
   body{margin:0;background:var(--bg);color:var(--ink);
-    font:14px/1.45 -apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+    font:14px/1.5 var(--serif)}
+  input,textarea,select,button{font-family:var(--serif)}
+  ::selection{background:#3a2a22}
   a{color:var(--ink)}
   .top{height:52px;background:var(--top);color:var(--top-ink);display:flex;align-items:center;gap:14px;padding:0 18px;padding-top:env(safe-area-inset-top);position:relative}
-  .top:after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;background:linear-gradient(90deg,var(--accent) 0 30%,var(--sky) 30% 50%,var(--good) 50% 70%,var(--plum) 70% 85%,var(--warn) 85% 100%)}
-  .top h1{margin:0;font-size:15px;font-weight:700;letter-spacing:.01em;display:flex;align-items:center;gap:10px}
-  .logo{width:26px;height:26px;border-radius:7px;background:#fff;color:#111;font-weight:800;font-size:11px;display:flex;align-items:center;justify-content:center;position:relative;flex:none}
+  .top:after{content:"";position:absolute;left:0;right:0;bottom:0;height:1px;background:var(--line)}
+  .top h1{margin:0;font-size:17px;font-weight:600;letter-spacing:.02em;display:flex;align-items:center;gap:10px;font-style:italic}
+  .logo{width:26px;height:26px;border-radius:6px;background:var(--ink);color:#0a0a0b;font-weight:700;font-size:11px;font-style:normal;display:flex;align-items:center;justify-content:center;position:relative;flex:none}
   .logo:after{content:"";position:absolute;left:6px;right:6px;bottom:4px;height:2px;border-radius:2px;background:var(--accent)}
   .top .st{display:flex;align-items:center;gap:6px;font-size:12px;color:#bdbdbd}
   .dot{width:7px;height:7px;border-radius:50%;background:#6b6b6b}
@@ -79,31 +83,28 @@
   .tabs::-webkit-scrollbar{display:none}
   .tab{padding:5px 7px;border-radius:999px;border:1px solid transparent;background:transparent;font:inherit;font-size:11.5px;color:var(--muted);cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:5px;flex:none}
   .tab .n{font-size:10px;background:var(--soft);color:var(--muted);border-radius:999px;padding:1px 4px;min-width:14px;text-align:center}
-  .tab.on{background:var(--ink);color:#fff;font-weight:600}
-  .tab.on .n{background:rgba(255,255,255,.2);color:#fff}
-  .tab[data-f="needs"].on{background:var(--accent)}
-  .tab[data-f="open"].on{background:var(--sky)}
-  .tab[data-f="sent"].on{background:var(--good)}
-  .tab[data-f="other"].on{background:var(--plum)}
-  .tab[data-f="rem"].on{background:var(--warn)}
+  .tab.on{background:var(--soft);color:var(--ink);font-weight:600;border-color:var(--line)}
+  .tab.on .n{background:rgba(255,255,255,.08);color:var(--ink)}
+  .tab[data-f="needs"].on{color:var(--accent-ink)}
+  .tab[data-f="rem"].on{color:var(--warn)}
   .tab .n.hot{background:var(--accent);color:#fff}
   .tab.on .n.hot{background:rgba(255,255,255,.28)}
   .search{padding:8px 10px;border-bottom:1px solid var(--line)}
   .search input{width:100%;padding:8px 12px;border:1px solid var(--line);border-radius:999px;font:inherit;font-size:13px;background:var(--soft);color:var(--ink)}
-  .search input:focus{outline:0;border-color:var(--ink);background:#fff}
+  .search input:focus{outline:0;border-color:var(--muted);background:var(--soft)}
   .rows{overflow-y:auto;flex:1}
   .row{display:flex;gap:11px;padding:12px 14px;border-bottom:1px solid var(--line);cursor:pointer;min-width:0;overflow:hidden;position:relative}
-  .row:hover{background:#faf9f7}
+  .row:hover{background:#19191c}
   .row.sel{background:var(--soft)}
   .row.sel:before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--ink)}
   .row.needs.sel:before{background:var(--accent)}
-  .row.sel:before{background:var(--sky)}
+  .row.sel:before{background:var(--muted)}
   .row.needs.sel:before{background:var(--accent)}
   .av{width:38px;height:38px;border-radius:50%;background:var(--soft);color:var(--ink);font-weight:700;font-size:13px;
     display:flex;align-items:center;justify-content:center;flex:none;border:1px solid var(--line)}
-  .av.c0{background:#ecebe8;color:#2a2a2a}.av.c1{background:#f8ebe4;color:#8f4523}.av.c2{background:#e6f3ea;color:#2f7d4f}
-  .av.c3{background:#e8eef7;color:#2f4f7d}.av.c4{background:#f5ecf7;color:#6d3f7a}.av.c5{background:#fff3df;color:#8a5200}
-  .av.c6{background:#e5f4f4;color:#1f6b6b}.av.c7{background:#f0ede3;color:#5c4d1a}
+  .av.c0{background:#26262a;color:#d8d5cf}.av.c1{background:#2a1f19;color:#e39a76}.av.c2{background:#172219;color:#7bbf95}
+  .av.c3{background:#181d25;color:#8fb0da}.av.c4{background:#211b25;color:#b899c4}.av.c5{background:#262015;color:#d9a24a}
+  .av.c6{background:#152021;color:#7fb8b3}.av.c7{background:#24211a;color:#c9b98a}
   .chip{display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;border-radius:999px;padding:2px 7px;vertical-align:middle;white-space:nowrap}
   .chip.needs{background:var(--accent-soft);color:var(--accent-ink)}
   .chip.other{background:var(--plum-soft);color:var(--plum)}
@@ -128,24 +129,26 @@
   .convo{display:flex;flex-direction:column;min-height:0;min-width:0;background:var(--panel);border-right:1px solid var(--line)}
   .chead{padding:12px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px}
   .chead .who{min-width:0;flex:1}
-  .chead .nm{font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .chead .nm{font-weight:600;font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:.01em}
   .chead .em{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .chead .badge{flex:none;font-size:12px;color:var(--muted);border:1px solid var(--line);border-radius:14px;padding:3px 10px}
-  .summary{margin:8px 20px 0;display:flex;align-items:baseline;gap:8px;font-size:12.5px;color:var(--accent-ink);cursor:pointer;line-height:1.35}
-  .summary b{flex:none;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--accent);font-weight:800}
-  .summary span{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .summary.open span{white-space:normal}
+  .summary{margin:0 20px;border-bottom:1px solid var(--line)}
+  .summary b{display:inline-flex;align-items:center;gap:6px;padding:7px 0;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);font-weight:600;cursor:pointer;user-select:none}
+  .summary b:after{content:"\25BE";font-size:10px;transition:transform .15s}
+  .summary.open b:after{transform:rotate(180deg)}
+  .summary span{display:none;padding:0 0 10px;font-size:13px;color:var(--muted);line-height:1.45}
+  .summary.open span{display:block}
   .msgs{flex:1;overflow-y:auto;padding:18px 20px;display:flex;flex-direction:column;gap:10px}
-  .day{align-self:center;font-size:11px;color:var(--sky);font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin:8px 0 2px;background:var(--sky-soft);padding:2px 10px;border-radius:999px}
+  .day{align-self:center;font-size:11px;color:var(--faint);letter-spacing:.08em;text-transform:uppercase;margin:8px 0 2px}
   .sys{align-self:center;font-size:12px;color:var(--faint)}
   .m{max-width:72%;padding:11px 14px;border-radius:18px;white-space:pre-wrap;word-wrap:break-word;position:relative}
-  .m.them{align-self:flex-start;background:var(--sky-soft);border-bottom-left-radius:6px}
-  .m.us{align-self:flex-end;background:var(--ink);color:#fff;border-bottom-right-radius:6px}
+  .m.them{align-self:flex-start;background:var(--bubble);border-bottom-left-radius:6px}
+  .m.us{align-self:flex-end;background:#2b241f;color:var(--ink);border:1px solid #3a2f28;border-bottom-right-radius:6px}
   .m.us .t,.m.us .who{color:#bdbdbd}
   .m.draft{background:var(--panel);color:var(--muted);border:1px dashed var(--line)}
   .m.draft .t,.m.draft .who{color:var(--faint)}
   .pics{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
-  .pics a{display:block;border-radius:10px;overflow:hidden;border:1px solid rgba(0,0,0,.08);background:#fff}
+  .pics a{display:block;border-radius:10px;overflow:hidden;border:1px solid var(--line);background:var(--soft)}
   .pics img{display:block;width:120px;height:120px;object-fit:cover}
   .pics .file{display:flex;align-items:center;gap:6px;padding:8px 10px;font-size:12px;color:var(--ink);text-decoration:none;max-width:200px}
   .pics .file span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -162,8 +165,8 @@
   /* Reminders */
   .radd{padding:10px 12px;border-bottom:1px solid var(--line);background:var(--panel)}
   .radd form{display:flex;flex-wrap:wrap;gap:6px}
-  .radd input[type=text]{flex:1 1 100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font:inherit;font-size:13px;background:#fff}
-  .radd select,.radd input[type=date]{flex:1 1 110px;padding:7px 9px;border:1px solid var(--line);border-radius:9px;font:inherit;font-size:12.5px;background:#fff;color:var(--ink)}
+  .radd input[type=text]{flex:1 1 100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font:inherit;font-size:13px;background:var(--soft);color:var(--ink)}
+  .radd select,.radd input[type=date]{flex:1 1 110px;padding:7px 9px;border:1px solid var(--line);border-radius:9px;font:inherit;font-size:12.5px;background:var(--soft);color:var(--ink)}
   .radd .btn{padding:7px 13px;font-size:13px;flex:none}
   .rgrp{padding:10px 12px 4px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
   .rgrp.late{color:var(--accent-ink)}
@@ -173,9 +176,9 @@
   .rem.late{background:var(--accent-soft)}
   .rem.done{opacity:.55}
   .rem.done .rt{text-decoration:line-through}
-  .rem .tick{flex:none;width:22px;height:22px;border-radius:50%;border:2px solid var(--line);background:#fff;cursor:pointer;font-size:13px;line-height:18px;text-align:center;color:transparent;padding:0}
+  .rem .tick{flex:none;width:22px;height:22px;border-radius:50%;border:2px solid #3a3a40;background:transparent;cursor:pointer;font-size:13px;line-height:18px;text-align:center;color:transparent;padding:0}
   .rem .tick:hover{border-color:var(--accent)}
-  .rem.done .tick{background:var(--good);border-color:var(--good);color:#fff}
+  .rem.done .tick{background:var(--good);border-color:var(--good);color:#0a0a0b}
   .rem .rb{flex:1;min-width:0;cursor:pointer}
   .rem .rt{font-size:13.5px;line-height:1.35}
   .rem .rm{font-size:11.5px;color:var(--muted);margin-top:2px}
@@ -183,13 +186,25 @@
   .rem .del{flex:none;background:none;border:0;color:var(--muted);font-size:16px;cursor:pointer;padding:0 2px;line-height:1}
   .rem .del:hover{color:var(--accent)}
   .rshow{display:block;width:100%;background:none;border:0;padding:12px;font:inherit;font-size:12.5px;color:var(--muted);cursor:pointer;text-decoration:underline}
+  .addr{margin-bottom:10px;border:1px solid var(--line);border-radius:10px;background:var(--soft);padding:10px 12px}
+  .addr .ah{display:flex;align-items:center;gap:8px;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:8px}
+  .addr .ah b{color:var(--ink);font-weight:600;text-transform:none;letter-spacing:0;font-size:13px}
+  .addr .grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .addr input,.addr select{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:7px;font:inherit;font-size:13px;background:var(--panel);color:var(--ink)}
+  .addr .full{grid-column:1 / -1}
+  .addr .ab{display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap}
+  .addr .ab .btn{padding:7px 13px;font-size:13px}
+  .addr .am{font-size:12px;color:var(--muted)}
+  .addr .am.good{color:var(--good)}
+  .addr .am.bad{color:var(--accent-ink)}
+  .addr.done{border-color:#2a3a2e}
   .remind{margin-bottom:10px}
   .remind .rlink{background:none;border:1px dashed var(--line);border-radius:9px;padding:7px 12px;font:inherit;font-size:12.5px;color:var(--muted);cursor:pointer;display:inline-flex;align-items:center;gap:6px}
   .remind .rlink:hover{border-color:var(--accent);color:var(--accent-ink)}
   .remind form{display:none;margin-top:8px;gap:6px;flex-wrap:wrap;background:var(--soft);border-radius:10px;padding:8px}
   .remind.open form{display:flex}
-  .remind input[type=text]{flex:1 1 100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:13px;background:#fff}
-  .remind select,.remind input[type=date]{flex:1 1 120px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:12.5px;background:#fff;color:var(--ink)}
+  .remind input[type=text]{flex:1 1 100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:13px;background:var(--soft);color:var(--ink)}
+  .remind select,.remind input[type=date]{flex:1 1 120px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:12.5px;background:var(--soft);color:var(--ink)}
   .remind .btn{padding:7px 13px;font-size:13px;flex:none}
   .remind .rsaved{font-size:12px;color:var(--good);align-self:center}
   .notice{background:var(--soft);border-radius:10px;padding:9px 12px;font-size:13px;color:var(--muted);margin-bottom:10px}
@@ -199,30 +214,30 @@
   .notice.sent{background:var(--good-soft);color:var(--good)}
   .tones{display:flex;gap:6px;margin-bottom:8px}
   .tone{padding:5px 12px;border:1px solid var(--line);border-radius:16px;background:transparent;color:var(--muted);font:inherit;font-size:12px;cursor:pointer}
-  .tone.on{background:var(--sky);border-color:var(--sky);color:#fff;font-weight:600}
+  .tone.on{background:var(--ink);border-color:var(--ink);color:#0a0a0b;font-weight:600}
   .tone.edited{border-color:var(--accent);color:var(--accent-ink)}
   .tone.edited{border-style:dashed}
-  .box{border:1.5px solid var(--black);border-radius:12px;overflow:hidden}
+  .box{border:1px solid #3a3a40;border-radius:10px;overflow:hidden;background:var(--soft)}
   .box.off{border-color:var(--line)}
   .box textarea{width:100%;min-height:96px;max-height:40vh;padding:12px 14px;border:0;resize:vertical;font:inherit;color:var(--ink);background:transparent;display:block}
   .box textarea:focus{outline:0}
   .box textarea::placeholder{color:var(--faint)}
-  .bar{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px solid var(--line);background:#fafafa;flex-wrap:wrap}
-  .attach{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--muted);font:inherit;font-size:13px;cursor:pointer}
+  .bar{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+  .attach{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--muted);font:inherit;font-size:13px;cursor:pointer}
   .attach:hover{border-color:var(--teal);color:var(--teal)}
   .attach input{display:none}
-  .attach.polish{border-color:var(--plum);color:var(--plum);background:var(--plum-soft)}
-  .attach.polish:hover{background:var(--plum);color:#fff}
+  .attach.polish{border-color:#3a3a40;color:var(--ink);background:var(--soft)}
+  .attach.polish:hover{border-color:var(--muted)}
   .attach:disabled{opacity:.5;cursor:default}
   .tone.own{border-style:dashed}
-  .tone.own.on{background:var(--plum);border-color:var(--plum);border-style:solid}
+  .tone.own.on{background:var(--ink);border-color:var(--ink);border-style:solid}
   .thumbs{display:flex;gap:8px;flex-wrap:wrap;padding:8px 10px 0}
   .thumb{position:relative;width:64px;height:64px;border-radius:8px;overflow:hidden;border:1px solid var(--line)}
   .thumb img{width:100%;height:100%;object-fit:cover;display:block}
-  .thumb button{position:absolute;top:2px;right:2px;width:20px;height:20px;border-radius:50%;border:0;background:rgba(0,0,0,.65);color:#fff;font-size:13px;line-height:20px;padding:0;cursor:pointer}
+  .thumb button{position:absolute;top:2px;right:2px;width:20px;height:20px;border-radius:50%;border:0;background:rgba(0,0,0,.75);color:#fff;font-size:13px;line-height:20px;padding:0;cursor:pointer}
   .thumb .sz{position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);color:#fff;font-size:9px;text-align:center;padding:1px 0}
   .bar .grow{flex:1}
-  .btn{padding:9px 16px;border:0;border-radius:9px;font:inherit;font-weight:600;cursor:pointer;background:var(--black);color:#fff}
+  .btn{padding:9px 16px;border:0;border-radius:8px;font:inherit;font-weight:600;cursor:pointer;background:var(--ink);color:#0a0a0b}
   .btn.accent{background:var(--accent)}
   .btn:disabled{background:#d6d6d6;color:#8a8a8a;cursor:not-allowed}
   .btn.ghost{background:transparent;color:var(--muted);border:1px solid var(--line)}
@@ -237,15 +252,12 @@
   .cust .kind.ret{color:var(--good)}
   .cust .kind.none{color:var(--faint)}
   .stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:12px 0}
-  .stat{background:var(--soft);border-radius:10px;padding:9px 10px;border-top:3px solid var(--line)}
-  .stat:nth-child(1){background:var(--sky-soft);border-top-color:var(--sky)}
-  .stat:nth-child(2){background:var(--good-soft);border-top-color:var(--good)}
-  .stat:nth-child(3){background:var(--warn-soft);border-top-color:var(--warn)}
+  .stat{background:var(--soft);border-radius:8px;padding:9px 10px;border-top:1px solid var(--line)}
   .stat b{display:block;font-size:15px}
   .stat span{font-size:11px;color:var(--muted)}
   .cands{margin-top:12px}
   .cand{display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line);cursor:pointer}
-  .cand:hover{background:#faf9f7}
+  .cand:hover{background:#19191c}
   .cand .who{min-width:0;flex:1}
   .cand .who b{display:block;font-size:13px}
   .cand .who span{font-size:12px;color:var(--muted);display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -290,7 +302,7 @@
   .edit{background:none;border:0;padding:0;font:inherit;font-size:12px;color:var(--muted);text-decoration:underline;cursor:pointer;margin-left:8px}
   .form{border:1px solid var(--line);border-radius:10px;padding:10px;margin-top:8px;background:#fafafa}
   .form label{display:block;font-size:11px;color:var(--muted);margin:6px 0 2px;text-transform:uppercase;letter-spacing:.04em}
-  .form input,.form textarea{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:7px;font:inherit;background:#fff;color:var(--ink)}
+  .form input,.form textarea{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:7px;font:inherit;background:var(--soft);color:var(--ink)}
   .form textarea{min-height:56px;resize:vertical}
   .form .two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
   .form .three{display:grid;grid-template-columns:2fr 1fr 1fr;gap:8px}
@@ -300,7 +312,7 @@
   .form .msg.bad{color:#1a1a1a;font-weight:600}
   .addr{font-size:13px;color:var(--muted);white-space:pre-line;margin-top:6px}
   .tokform{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-  .tokform input{flex:1;min-width:220px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;background:#fff}
+  .tokform input{flex:1;min-width:220px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;background:var(--soft);color:var(--ink)}
 </style>
 </head>
 <body>
@@ -511,8 +523,7 @@ function render(){
       return '<div class="row' + (c.key === selectedKey ? ' sel' : '') + (c.open ? ' unread' : '') + (c.needs ? ' needs' : '') + '" data-k="' + esc(c.key) + '">' +
         '<div class="' + avClass(c.email || c.key) + '">' + esc(initials(c.name, c.email)) + '</div>' +
         '<div class="mid"><div class="r1"><span class="nm">' + esc(c.name) + '</span><span class="tm" title="' + esc(stamp(sentAt(l))) + '">' + esc(when(sentAt(l))) + '</span></div>' +
-        '<div class="sn">' + esc(l.question || '') + '</div>' +
-        (l.aiAnalysis ? '<div class="sum">' + esc(l.aiAnalysis) + '</div>' : '') +
+        '<div class="sn">' + esc(l.aiAnalysis || l.question || '') + '</div>' +
         '<div class="sub">' + statusChip(c) + (photos ? '<span class="chip photo">' + photos + ' photo' + (photos === 1 ? '' : 's') + '</span>' : '') +
         '<span>' + esc(l.subject || '') + (c.items.length > 1 ? ' · ' + c.items.length + ' emails' : '') + '</span></div></div></div>';
     }).join('');
@@ -706,6 +717,71 @@ function suggestReminder(c){
   }
   return 'Follow up with ' + who + ord;
 }
+// The customer asked for a new shipping address: show it as editable fields
+// with the order it applies to, and one button that changes it in Shopify.
+function orderChoices(l){
+  var out = [];
+  var seen = {};
+  var add = function(gid, name, fulfillment){ if(!gid || seen[gid]) return; seen[gid] = 1; out.push({ gid: gid, name: name, fulfillment: fulfillment || '' }); };
+  if(l.shopifyOrderData && l.shopifyOrderData.gid) add(l.shopifyOrderData.gid, l.shopifyOrderData.orderName || ('#' + l.shopifyOrderData.orderNumber), l.shopifyOrderData.fulfillmentStatus);
+  var p = l.customerProfile;
+  (p && p.orders || []).forEach(function(o){ add(o.gid, o.name, o.fulfillment); });
+  // Unshipped first - that is the one an address change is almost always for.
+  out.sort(function(a,b){ var ua = /UNFULFILLED|PARTIAL/i.test(a.fulfillment) ? 0 : 1, ub = /UNFULFILLED|PARTIAL/i.test(b.fulfillment) ? 0 : 1; return ua - ub; });
+  if(l.orderNumber){ var want = String(l.orderNumber).replace(/^#/, ''); out.sort(function(a,b){ return (String(a.name).replace(/^#/, '') === want ? -1 : 0) - (String(b.name).replace(/^#/, '') === want ? -1 : 0); }); }
+  return out;
+}
+function addressBlock(c){
+  var l = c.latest, a = l.requestedAddress;
+  if(!a) return '';
+  var names = String(c.name || '').trim().split(/\s+/);
+  var first = names[0] || '', last = names.slice(1).join(' ');
+  if(l.addressUpdatedAt){
+    return '<div class="addr done"><div class="ah"><b>Address updated</b> ' + esc(l.addressUpdatedOrder || '') + ' · ' + esc(stamp(l.addressUpdatedAt)) + '</div>' +
+      '<div class="am">' + esc([a.address1, a.address2, a.city, a.state, a.zip].filter(Boolean).join(', ')) + '</div></div>';
+  }
+  var orders = orderChoices(l);
+  var v = function(x){ return esc(x || ''); };
+  return '<div class="addr" id="addrBox"><div class="ah">Customer asked for a new shipping address <b>&#8594; update it in Shopify</b></div>' +
+    '<div class="grid">' +
+    '<input id="ad-first" placeholder="First name" value="' + v(first) + '"><input id="ad-last" placeholder="Last name" value="' + v(last) + '">' +
+    '<input class="full" id="ad-a1" placeholder="Street address" value="' + v(a.address1) + '">' +
+    '<input class="full" id="ad-a2" placeholder="Apt / unit (optional)" value="' + v(a.address2) + '">' +
+    '<input id="ad-city" placeholder="City" value="' + v(a.city) + '"><input id="ad-state" placeholder="State (e.g. TX)" value="' + v(a.state) + '">' +
+    '<input id="ad-zip" placeholder="ZIP" value="' + v(a.zip) + '"><input id="ad-country" placeholder="Country" value="' + v(a.country || 'US') + '">' +
+    '</div><div class="ab">' +
+    (orders.length ? '<select id="ad-order">' + orders.map(function(o){ return '<option value="' + esc(o.gid) + '">' + esc(o.name) + (o.fulfillment ? ' · ' + esc(pretty(o.fulfillment)) : '') + '</option>'; }).join('') + '</select>' +
+      '<button class="btn" id="ad-save" type="button">Update address</button>'
+      : '<span class="am">No order found for this customer - open the customer panel and look them up first.</span>') +
+    '<span class="am" id="ad-msg"></span></div></div>';
+}
+function wireAddress(c){
+  var btn = document.getElementById('ad-save');
+  if(!btn) return;
+  var l = c.latest;
+  btn.onclick = async function(){
+    var g = function(id){ return (document.getElementById(id).value || '').trim(); };
+    var msg = document.getElementById('ad-msg');
+    var sel = document.getElementById('ad-order');
+    var address = { firstName: g('ad-first'), lastName: g('ad-last'), address1: g('ad-a1'), address2: g('ad-a2'), city: g('ad-city'), provinceCode: g('ad-state').toUpperCase(), zip: g('ad-zip'), countryCode: (g('ad-country') || 'US').toUpperCase() };
+    if(!address.address1 || !address.city || !address.zip){ msg.className = 'am bad'; msg.textContent = 'Street, city and ZIP are needed.'; return; }
+    var orderName = sel.options[sel.selectedIndex].text.split(' ·')[0];
+    if(!window.confirm('Change the shipping address on ' + orderName + ' to:\n' + [address.address1, address.address2, address.city, address.provinceCode, address.zip].filter(Boolean).join(', ') + '?')) return;
+    btn.disabled = true; msg.className = 'am'; msg.textContent = 'Updating…';
+    try{
+      var d = await postJson('/api/orders/address', { orderId: sel.value, address: address, leadId: l._id });
+      l.addressUpdatedAt = new Date().toISOString(); l.addressUpdatedOrder = (d.order && d.order.name) || orderName;
+      // Offer a one-line confirmation reply so he can just hit send.
+      var box = document.getElementById('composeBox');
+      var first = (c.name || '').split(' ')[0];
+      var line = 'Hi ' + first + ',\n\nDone - ' + (d.order && d.order.name || orderName) + ' will now ship to ' + [address.address1, address.address2, address.city, address.provinceCode + ' ' + address.zip].filter(Boolean).join(', ') + '. Thanks for catching that before it went out.\n\n- Crib Essentials';
+      if(box && window.confirm('Address updated in Shopify. Replace the draft with a short confirmation reply?')) box.value = line;
+      renderConvo();
+    }catch(err){
+      btn.disabled = false; msg.className = 'am bad'; msg.textContent = err.message;
+    }
+  };
+}
 function remindBlock(c){
   var l = c.latest;
   var mine = reminders.filter(function(r){ return !r.done && convoForReminder(r) && convoForReminder(r).key === c.key; });
@@ -749,7 +825,7 @@ function renderConvo(){
     '<button class="movebtn" id="moveBtn" title="' + (c.other ? 'Put this back with the customers' : 'Move this out of the customer list') + '"><span class="full">' + (c.other ? 'Move to customers' : 'Not a customer') + '</span><span class="short">' + (c.other ? 'To customers' : 'Not customer') + '</span></button>' +
     '<button class="custbtn" id="custBtn">Customer</button></div>';
 
-  if(latest.aiAnalysis) html += '<div class="summary' + (sumOpen[c.key] ? ' open' : '') + '" id="sumBox" title="Tap to expand"><b>Summary</b><span>' + esc(latest.aiAnalysis) + '</span></div>';
+  if(latest.aiAnalysis) html += '<div class="summary' + (sumOpen[c.key] ? ' open' : '') + '" id="sumBox"><b>Summary</b><span>' + esc(latest.aiAnalysis) + '</span></div>';
   html += '<div class="msgs" id="msgs">';
   var lastDay = '';
   c.items.forEach(function(l, idx){
@@ -777,6 +853,7 @@ function renderConvo(){
   // Compose for the latest email in the thread.
   var drafts = draftsFor(latest);
   html += '<div class="compose">';
+  html += addressBlock(c);
   html += remindBlock(c);
   if(latest.status === 'sent'){
     html += '<div class="notice sent">Replied ' + esc(new Date(latest.sentAt).toLocaleString()) + '. A new email from them will reopen this conversation.</div>';
@@ -824,8 +901,9 @@ function renderConvo(){
   var moreBtn = document.getElementById('moreBtn');
   if(moreBtn){ moreBtn.onclick = function(){ historyOpen[c.key] = !historyOpen[c.key]; renderConvo(); }; }
   var sumBox = document.getElementById('sumBox');
-  if(sumBox){ sumBox.onclick = function(){ sumOpen[c.key] = !sumOpen[c.key]; sumBox.classList.toggle('open', sumOpen[c.key]); }; }
+  if(sumBox){ sumBox.querySelector('b').onclick = function(){ sumOpen[c.key] = !sumOpen[c.key]; sumBox.classList.toggle('open', sumOpen[c.key]); }; }
   wireRemind(c);
+  wireAddress(c);
   wirePhotos(c);
 
   var sendBtn = document.getElementById('sendBtn');
