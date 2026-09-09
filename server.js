@@ -10,11 +10,7 @@ app.set('trust proxy', 1);
 app.use(cors());
 // Customer photos arrive base64-encoded from the Gmail import, so the body
 // limit is well above Express's 100kb default.
-app.use(express.json({
-  limit: '12mb',
-  verify: (req, res, buf) => { req.rawBody = buf; },
-}));
-app.use(require('./instagram').buildRouter({}));
+app.use(express.json({ limit: '12mb' }));
 
 const anthropic = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
 
@@ -962,7 +958,7 @@ function buildOrderBlock(shopifyData, orderMismatch) {
   let orderBlock = '';
   if (orderMismatch) {
     orderBlock = `
-ORDER NUMBER CHECK: the customer quoted order ${orderMismatch}, but that order is not under the email address they wrote from. Do NOT reveal anything about that order - no status, no items, no tracking. Say you are pulling up order ${orderMismatch} and will come right back, and set needsHuman to true so Dezmond can verify it is theirs.
+ORDER NUMBER CHECK: the customer quoted order ${orderMismatch}, but that order is not under the email address they wrote from. Do NOT reveal anything about that order - no status, no items, no tracking, no address on file. But still handle their request fully: if they asked for an address change, repeat the new address back exactly as they wrote it and say you are updating order ${orderMismatch} to it as long as it has not shipped and will confirm once done; if they asked about timing, a missing item, a refund or a cancellation, acknowledge exactly what they asked and say what happens next in general terms, then say you are pulling up order ${orderMismatch} and will come right back. Set needsHuman to true so Dezmond can verify it is theirs. The reply must never be only "I'm pulling up your order".
 `;
   }
   if (shopifyData && !orderMismatch) {
@@ -2127,7 +2123,7 @@ app.get('/api/health', async (req, res) => {
   }
   res.json({
     status: 'ok',
-    version: 'v14.1 - Your answer tab + Polish',
+    version: 'v14.2 - answer from order data first',
     storage: dbReady ? 'mongodb (persistent)' : 'in-memory (resets on restart)',
     dbError: dbError || null,
     leadsStored: leadCount,
