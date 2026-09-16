@@ -1063,7 +1063,7 @@ function parseHistory(historyLines) {
 // change both together.
 function lateAfterDays(title) {
   const t = String(title || '').toLowerCase();
-  if (/\b(phone|ipod)\b/.test(t) && /mirror/.test(t)) return { category: 'Phone / iPod Mirror', days: null };
+  if (/\b(phone|ipod)\b/.test(t) && /mirror/.test(t)) return { category: 'Phone / iPod Mirror - if unshipped, tell them it ships within the next 2 weeks (see CURRENT NOTICES)', days: 24 };
   if (/crochet/.test(t)) return { category: 'Crochet Flower Pillow (no window listed)', days: null };
   if (/rug/.test(t)) return { category: 'rug', days: 42 };
   if (/mirror/.test(t)) return { category: 'mirror', days: 24 };
@@ -1104,11 +1104,12 @@ function itemStatusLines(shopifyData) {
     }
   });
   let verdict = '';
+  const extras = anyUnshipped && age !== null && age > 30 ? ' This order has been unshipped for more than 30 days: add one sentence promising extra items for the wait (see CURRENT NOTICES) and flag it so they get included.' : '';
   if (!anyUnshipped) verdict = 'Everything on this order has shipped. Give the tracking and say tracking will show the delivery estimate. Do not guess an arrival date.';
   else if (anyUnknown && !anyLate) verdict = 'Something on this order has no quotable window (see above). Say what HAS shipped with tracking, say the rest is still being made, and that you are checking the exact timing.';
   else if (anyLate) verdict = 'This order is PAST its window. Say so in the first sentence, apologise once plainly, say what has shipped and what has not, and say you are checking on exactly when the rest goes out. Do not recite the standard production window to them.';
   else verdict = 'This order is still inside its normal window. Say what is still being made, give its window from the policies, and do not apologise for lateness.';
-  return { lines: lines.join('\n'), verdict };
+  return { lines: lines.join('\n'), verdict: verdict + extras };
 }
 
 function buildOrderBlock(shopifyData, orderMismatch) {
@@ -1734,7 +1735,29 @@ app.post('/api/leads/:id/send', async (req, res) => {
       }
     }
 
-    res.json({ sent: true, sentAt, attachments: stored.length });
+    // Promises made in the reply become reminders, so they do not get lost:
+    // extras for the wait, and "ships within the next 2 weeks".
+    let reminders = 0;
+    try {
+      const promised = [];
+      if (/\b(extra|extras|bonus|something extra|free (item|gift|piece)s?)\b/i.test(bodyText)) {
+        promised.push({ text: `Add the extra items to ${lead.orderNumber ? 'order #' + lead.orderNumber : 'the order'} for ${lead.customerName || lead.email} (promised in the reply)`, days: 7 });
+      }
+      if (/\b(within|in) the next (two|2) weeks\b/i.test(bodyText) || /\bship(s|ped)? (within|in) (two|2) weeks\b/i.test(bodyText)) {
+        promised.push({ text: `Ship ${lead.orderNumber ? 'order #' + lead.orderNumber : 'the order'} for ${lead.customerName || lead.email} - told them within 2 weeks`, days: 12 });
+      }
+      for (const p of promised) {
+        const r = cleanReminder({
+          text: p.text, dueAt: new Date(Date.now() + p.days * 86400000).toISOString(),
+          leadId: String(lead._id), threadId: lead.threadId, customerName: lead.customerName, email: lead.email, orderNumber: lead.orderNumber,
+        });
+        if (dbReady && Reminder) await Reminder.create(r);
+        else memoryReminders.unshift({ ...r, _id: 'r' + Date.now() + reminders, done: false, createdAt: new Date() });
+        reminders++;
+      }
+    } catch (e) { console.error('Reminder from reply failed:', e.message); }
+
+    res.json({ sent: true, sentAt, attachments: stored.length, reminders });
   } catch (err) {
     console.error('Send failed:', err);
     res.status(500).json({ error: err.message });
@@ -2410,7 +2433,7 @@ app.get('/api/health', async (req, res) => {
   const want = ['read_all_orders', 'write_orders', 'write_customers', 'write_fulfillments', 'read_returns', 'write_returns'];
   res.json({
     status: 'ok',
-    version: 'v15.0 - bulk mail dropped before drafting; replies answer from per-item order status; likely order auto-loaded',
+    version: 'v15.1 - iPod mirror 2-week window, extras after 30 days, refund-as-option; extras reminder on send',
     shopifyScopes: sc.scopes,
     shopifyScopesMissing: sc.scopes ? want.filter((w) => !sc.scopes.includes(w)) : null,
     shopifyScopeError: sc.error,
