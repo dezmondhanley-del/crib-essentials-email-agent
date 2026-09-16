@@ -918,7 +918,8 @@ function renderConvo(){
       '<div class="bar"><button class="btn ghost" id="resetBtn">Reset</button>' +
       '<label class="attach" title="Attach up to 4 photos">&#128247; Photo<input type="file" id="photoInput" accept="image/*" multiple></label>' +
       '<button class="attach polish" id="polishBtn" type="button" title="Fix spelling and grammar and make it read professionally - keeps every fact you wrote">&#10024; Polish</button>' +
-      '<button class="attach" id="undoBtn" type="button" style="display:none" title="Put back what you had before Polish">Undo</button><span class="grow"></span>' +
+      '<button class="attach" id="undoBtn" type="button" style="display:none" title="Put back what you had before Polish">Undo</button>' +
+      (latest.threadId ? '<button class="attach" id="redraftBtn" type="button" title="Pull the latest order data from Shopify and Gmail and write the answers again">&#8635; Redraft</button>' : '') + '<span class="grow"></span>' +
       '<span class="sendmsg" id="sendMsg"></span><button class="btn" id="sendBtn">Send email</button></div></div>';
     html += '<div class="hint"><span>' + (latest.threadId
       ? 'Replies to ' + esc(c.email) + ' in the original thread from support@1cribessential.com.'
@@ -1006,6 +1007,16 @@ function renderConvo(){
       }catch(err){
         msgSet('bad', 'Polish failed: ' + err.message);
       }finally{ polishBtn.disabled = false; polishBtn.innerHTML = '&#10024; Polish'; }
+    };
+    var redraftBtn = document.getElementById('redraftBtn');
+    if(redraftBtn) redraftBtn.onclick = async function(){
+      if(!getToken()){ askToken('Enter your dashboard token to redraft.'); return; }
+      redraftBtn.disabled = true; redraftBtn.innerHTML = '&#8635; Redrafting…';
+      try{
+        await postJson('/api/leads/' + encodeURIComponent(latest._id) + '/refetch', {});
+        msgSet('good', 'Rewriting with the latest order data - new drafts appear here in about a minute.');
+        setTimeout(function(){ load(); }, 60000);
+      }catch(err){ redraftBtn.disabled = false; redraftBtn.innerHTML = '&#8635; Redraft'; msgSet('bad', 'Redraft failed: ' + err.message); }
     };
     undoBtn.onclick = function(){
       if(beforePolish === null) return;
