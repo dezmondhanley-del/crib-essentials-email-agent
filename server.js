@@ -222,6 +222,38 @@ function guessAudience(subject, body, from) {
   if (OTHER_PATTERNS.some((re) => re.test(text))) return 'other';
   return 'customer';
 }
+// Bulk mail never gets a draft or an Inbox row: newsletters, marketing blasts,
+// platform notifications, "you've been invited" mails, the Anthropic billing
+// notice. The workflow passes Gmail's own signals (category labels and the
+// List-Unsubscribe / Precedence headers); the text checks are the backup for
+// anything that arrives without them. A real customer writing from a work
+// address with a marketing footer stays in: the text rules need the mail to
+// also lack any sign of being about an order.
+const BULK_SENDER = /(^|[._-])(noreply|no-reply|donotreply|do-not-reply|newsletter|news|marketing|promo|promotions|offers|deals|hello|team|community|digest|updates|notifications?|alerts?|billing|invoices?|receipts?|mailer|bounce|postmaster|mailer-daemon)@|@(.*\.)?(shopifyemail\.com|shopify\.com|stripe\.com|paypal\.com|zapier\.com|anthropic\.com|klaviyo|mailchimp|sendgrid|hubspot|constantcontact|substack|beehiiv|linkedin\.com|facebookmail\.com|tiktok\.com|instagram\.com|google\.com|apple\.com|amazon\.com|pirateship\.com|render\.com|github\.com|meta\.com)/i;
+const ORDER_WORDS = /\b(my order|order ?#?\s?\d{3,}|#\d{4,}|tracking|refund|shipped|shipping|deliver|delivery|arrived|package|parcel|where is|cancel|address|damaged|broken|missing|wrong (item|size|color|colour)|return|exchange|receipt|i (ordered|bought|purchased|paid)|placed an order|how long|when will|still (coming|waiting)|update on|in stock|price|size|dimensions|mirror|rug|pillow|wall ?art|hoop|skateboard)\b/i;
+function isBulkMail(p) {
+  p = p || {};
+  const from = String(p.from || '').toLowerCase();
+  const labels = Array.isArray(p.labelIds) ? p.labelIds.map((l) => String(l).toUpperCase()) : [];
+  const text = `${p.subject || ''}\n${p.body || ''}`;
+  const reasons = [];
+  if (labels.includes('SPAM')) reasons.push('gmail-spam');
+  if (labels.some((l) => ['CATEGORY_PROMOTIONS', 'CATEGORY_SOCIAL', 'CATEGORY_FORUMS'].includes(l))) reasons.push('gmail-category');
+  if (p.listUnsubscribe || /^(bulk|list|junk)$/i.test(String(p.precedence || '')) || /^auto-/i.test(String(p.autoSubmitted || ''))) reasons.push('list-headers');
+  if (BULK_SENDER.test(from)) reasons.push('bulk-sender');
+  const aboutOrder = ORDER_WORDS.test(text);
+  // Gmail's Updates tab holds order confirmations AND some human replies, so it
+  // only counts when nothing in the mail reads like a customer.
+  if (labels.includes('CATEGORY_UPDATES') && !aboutOrder) reasons.push('gmail-updates');
+  if (/\b(unsubscribe|manage (your )?preferences|view (this email )?in (your )?browser|email preferences|opt[ -]?out)\b/i.test(text) && !aboutOrder) reasons.push('unsubscribe-footer');
+  if (/\b(webinar|limited time|% off|free trial|book a (call|demo)|case study|grow your (brand|business|sales|revenue)|boost your|paid collab(oration)?|sponsored|influencer marketing|seo services|lead generation|agency|invited you to|verification code|your (balance|invoice|payout|subscription)|has been (paid|resolved|opened|submitted))\b/i.test(text) && !aboutOrder) reasons.push('marketing-text');
+  // A real customer signal beats a single weak reason; two independent
+  // signals, or any hard Gmail signal, is enough to drop it.
+  const hard = reasons.includes('gmail-spam') || reasons.includes('list-headers') || (reasons.includes('gmail-category') && !aboutOrder);
+  const bulk = hard || reasons.length >= 2 || (reasons.length === 1 && !aboutOrder && reasons[0] === 'bulk-sender');
+  return { bulk: Boolean(bulk), reasons, aboutOrder };
+}
+
 // Same customer message? Compare the real send time when both sides have it,
 // otherwise the opening of the text.
 function sameMessage(a, b) {
@@ -710,7 +742,7 @@ function formatCustomer(cust) {
     const age = daysSince(o.createdAt);
     const parts = [
       `- ${o.name}, placed ${String(o.createdAt).slice(0, 10)}${age !== null ? ` (${age} days ago)` : ''} — ${o.financial}, ${o.fulfillment}, $${o.total}`,
-      `  Items: ${o.items.map((i) => `${i.title} x${i.quantity}`).join(', ')}`,
+      `  Items: ${o.items.map((i) => `${i.title} x${i.quantity}${typeof i.unfulfilled === 'number' ? (i.unfulfilled >= i.quantity ? ' (not shipped)' : i.unfulfilled > 0 ? ` (${i.unfulfilled} not shipped)` : ' (shipped)') : ''}`).join(', ')}`,
     ];
     parts.push(
       o.tracking.length
@@ -752,13 +784,19 @@ const ORDER_QUERY = `
                 title
                 variantTitle
                 quantity
+                unfulfilledQuantity
                 product { id title }
                 originalUnitPriceSet { shopMoney { amount } }
                 discountedTotalSet { shopMoney { amount } }
               }
             }
           }
-          fulfillments(first: 5) { createdAt trackingInfo { number url company } }
+          fulfillments(first: 5) {
+            createdAt
+            displayStatus
+            trackingInfo { number url company }
+            fulfillmentLineItems(first: 20) { nodes { quantity lineItem { title } } }
+          }
           shippingAddress { firstName lastName city provinceCode countryCode }
         }
       }
@@ -776,15 +814,26 @@ async function getShopifyOrder(orderNumber) {
     const o = edge.node;
 
     const tracking = [];
+    const shipments = [];
     (o.fulfillments || []).forEach((f) => {
+      const items = ((f.fulfillmentLineItems && f.fulfillmentLineItems.nodes) || []).map((n) => ({
+        title: n.lineItem ? n.lineItem.title : '', quantity: n.quantity,
+      }));
+      const shippedAt = f.createdAt ? String(f.createdAt).slice(0, 10) : null;
       (f.trackingInfo || []).forEach((t) => {
         tracking.push({
           trackingNumber: t.number || 'N/A',
           trackingUrl: t.url || 'N/A',
           company: t.company || '',
           status: 'shipped',
-          shippedAt: f.createdAt ? String(f.createdAt).slice(0, 10) : null,
+          shippedAt,
+          items: items.map((i) => i.title),
         });
+      });
+      shipments.push({
+        status: f.displayStatus || null, shippedAt,
+        tracking: (f.trackingInfo || []).map((t) => ({ number: t.number, url: t.url, company: t.company })),
+        items,
       });
     });
 
@@ -810,11 +859,13 @@ async function getShopifyOrder(orderNumber) {
           name: le.node.title,
           variant: le.node.variantTitle && le.node.variantTitle !== 'Default Title' ? le.node.variantTitle : null,
           quantity: le.node.quantity,
+          unfulfilled: typeof le.node.unfulfilledQuantity === 'number' ? le.node.unfulfilledQuantity : null,
           productId: le.node.product ? le.node.product.id : null,
           freeGift: orig !== null && paid !== null && orig > 0 && paid === 0,
         };
       }),
       trackingInfo: tracking,
+      shipments,
       shipTo: o.shippingAddress
         ? [o.shippingAddress.city, o.shippingAddress.provinceCode, o.shippingAddress.countryCode].filter(Boolean).join(', ')
         : null,
@@ -1007,6 +1058,59 @@ function parseHistory(historyLines) {
 
 // The order section of the prompt, shared by the main reply and the answer
 // options so both see exactly the same facts.
+// The FAQ's "late after N calendar days" table, applied in code so the model
+// gets a verdict instead of doing calendar maths. Mirrors the FAQ exactly:
+// change both together.
+function lateAfterDays(title) {
+  const t = String(title || '').toLowerCase();
+  if (/\b(phone|ipod)\b/.test(t) && /mirror/.test(t)) return { category: 'Phone / iPod Mirror', days: null };
+  if (/crochet/.test(t)) return { category: 'Crochet Flower Pillow (no window listed)', days: null };
+  if (/rug/.test(t)) return { category: 'rug', days: 42 };
+  if (/mirror/.test(t)) return { category: 'mirror', days: 24 };
+  if (/wall ?art|hoop/.test(t)) return { category: 'wall art', days: 30 };
+  if (/pillow|skateboard/.test(t)) return { category: 'ready-made', days: 5 };
+  return { category: 'unknown - do not quote a window', days: null };
+}
+
+// One line per item: shipped (with which tracking, when) or still being made,
+// plus the late / on-time verdict for anything unshipped.
+function itemStatusLines(shopifyData) {
+  const age = daysSince(shopifyData.createdAt);
+  const shipments = shopifyData.shipments || [];
+  const findShip = (name) => shipments.filter((s) => (s.items || []).some((i) => String(i.title).toLowerCase() === String(name).toLowerCase()));
+  const lines = [];
+  let anyLate = false, anyUnknown = false, anyUnshipped = false;
+  (shopifyData.products || []).forEach((p) => {
+    const ships = findShip(p.name);
+    const qty = p.quantity || 1;
+    const left = typeof p.unfulfilled === 'number' ? p.unfulfilled : (ships.length ? 0 : qty);
+    const gift = p.freeGift ? ' [free gift, $0]' : '';
+    if (ships.length && left <= 0) {
+      const desc = ships.map((s) => `${s.tracking.length ? s.tracking.map((t) => `${t.company ? t.company + ' ' : ''}${t.number}${t.url ? ' ' + t.url : ''}`).join(' / ') : 'no tracking number recorded'}${s.shippedAt ? ` on ${s.shippedAt}` : ''}`).join('; ');
+      lines.push(`  - ${p.name} (qty ${qty})${gift}: SHIPPED - ${desc}`);
+    } else if (ships.length && left > 0) {
+      anyUnshipped = true;
+      const desc = ships.map((s) => `${s.tracking.map((t) => `${t.company ? t.company + ' ' : ''}${t.number}`).join(' / ')}${s.shippedAt ? ` on ${s.shippedAt}` : ''}`).join('; ');
+      lines.push(`  - ${p.name} (qty ${qty})${gift}: PARTLY SHIPPED - ${qty - left} of ${qty} went out (${desc}); ${left} still being made, not shipped`);
+    } else {
+      anyUnshipped = true;
+      const w = lateAfterDays(p.name);
+      let verdict;
+      if (w.days === null) { verdict = `${w.category} - no window to quote, say you are checking the timing`; anyUnknown = true; }
+      else if (age === null) verdict = `${w.category}, late after ${w.days} calendar days`;
+      else if (age > w.days) { verdict = `${w.category}, late after ${w.days} calendar days - PAST ITS WINDOW by ${age - w.days} days. Own it.`; anyLate = true; }
+      else verdict = `${w.category}, late after ${w.days} calendar days - still within the normal window (${w.days - age} days left)`;
+      lines.push(`  - ${p.name} (qty ${qty})${gift}: NOT SHIPPED - still being made. ${verdict}`);
+    }
+  });
+  let verdict = '';
+  if (!anyUnshipped) verdict = 'Everything on this order has shipped. Give the tracking and say tracking will show the delivery estimate. Do not guess an arrival date.';
+  else if (anyUnknown && !anyLate) verdict = 'Something on this order has no quotable window (see above). Say what HAS shipped with tracking, say the rest is still being made, and that you are checking the exact timing.';
+  else if (anyLate) verdict = 'This order is PAST its window. Say so in the first sentence, apologise once plainly, say what has shipped and what has not, and say you are checking on exactly when the rest goes out. Do not recite the standard production window to them.';
+  else verdict = 'This order is still inside its normal window. Say what is still being made, give its window from the policies, and do not apologise for lateness.';
+  return { lines: lines.join('\n'), verdict };
+}
+
 function buildOrderBlock(shopifyData, orderMismatch) {
   let orderBlock = '';
   if (orderMismatch) {
@@ -1016,25 +1120,31 @@ ORDER NUMBER CHECK: the customer quoted order ${orderMismatch}, but that order i
   }
   if (shopifyData && !orderMismatch) {
     const age = daysSince(shopifyData.createdAt);
+    const st = itemStatusLines(shopifyData);
     orderBlock = `
-CUSTOMER ORDER (live from Shopify):
+CUSTOMER ORDER (live from Shopify${shopifyData.assumed ? ' - the customer did not quote an order number; this is their most recent open order, so refer to it by its number' : ''}):
 Order: ${shopifyData.orderName || shopifyData.orderNumber}
 Placed: ${String(shopifyData.createdAt).slice(0, 10)}${age !== null ? ` (${age} days ago)` : ''} - this is the date the ORDER was placed, NOT the date it shipped. Never call this the ship date.
 Payment status: ${shopifyData.status}
 Fulfillment status: ${shopifyData.fulfillmentStatus || 'unfulfilled'}
-Items on this order (the order cannot ship before its slowest item - each item's production time is on its product page below):
-${shopifyData.products.map((p) => `  - ${p.name} (qty ${p.quantity})${p.freeGift ? ' - FREE GIFT, $0, added automatically' : ''}`).join('\n')}
-Tracking: ${
-      shopifyData.trackingInfo.length
-        ? shopifyData.trackingInfo
-            .map((t) => `${t.company ? t.company + ' ' : ''}${t.trackingNumber}${t.shippedAt ? ` - shipped on ${t.shippedAt}` : ''} ${t.trackingUrl}`)
-            .join('; ')
-        : 'not shipped yet - no tracking'
-    }
-${teamNotes(shopifyData) ? teamNotes(shopifyData).trim() + '\n' : ''}`;
+Each item and where it stands RIGHT NOW (this is the answer to "where is my order" - state it, do not say you are checking it):
+${st.lines}
+${teamNotes(shopifyData) ? teamNotes(shopifyData).trim() + '\n' : ''}WHAT TO SAY ABOUT THIS ORDER (worked out for you from the data above and the policies): ${teamNotes(shopifyData) ? 'The team notes above are the ship timing - give them to the customer as the answer. ' : ''}${st.verdict}
+`;
   }
 
   return orderBlock;
+}
+
+// No order number in the email, but the customer record has orders: pick the
+// one they almost certainly mean - the newest order that is not fully shipped,
+// else the newest order - and load it in full so the reply can answer from it.
+function likelyOrderName(customer) {
+  const orders = (customer && Array.isArray(customer.orders)) ? customer.orders : [];
+  if (!orders.length) return null;
+  const open = orders.filter((o) => !/^fulfilled$/i.test(String(o.fulfillment || '')));
+  const pick = (open.length ? open : orders).slice().sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0];
+  return pick ? String(pick.name).replace(/^#/, '') : null;
 }
 
 async function askClaude(email, faqContext, shopifyData, productBlock, customerBlock, extra) {
@@ -1063,6 +1173,8 @@ ${faqContext}
 ${customerBlock || ''}${orderBlock}${productBlock}
 
 RULES:
+- ANSWER, DO NOT DEFER. If a CUSTOMER ORDER block or CUSTOMER RECORD is shown above, it already tells you whether each item has shipped, its tracking, how long ago the order was placed and whether it is past its window. Put those facts in the reply as the answer. A reply whose substance is "let me check / we'll get back to you / I'm looking into it" while the order data is sitting above is WRONG. The only thing you may say you are checking is the exact day an unshipped piece will go out - and only AFTER stating everything the data does say.
+- When the customer asks "where is my order", "any update", "still coming?", "when will it ship": the reply must name the order number, say for each item whether it has shipped (with the tracking number) or is still being made, and follow the "WHAT TO SAY ABOUT THIS ORDER" line if there is one.
 - Most items are handmade to order. Never promise a delivery date faster than the stated production time.
 - WHICH SOURCE TO BELIEVE, in this order, highest first:
   1. CURRENT NOTICES in the policies - these are written today and beat everything else.
@@ -1285,6 +1397,17 @@ app.post('/api/process-email', async (req, res) => {
 
     const faq = faqContext && String(faqContext).trim() ? faqContext : getFaq();
 
+    // Bulk mail stops here: no Claude call, no draft, no Inbox row.
+    const bulk = isBulkMail({
+      from, subject, body,
+      labelIds: req.body.labelIds, listUnsubscribe: req.body.listUnsubscribe,
+      precedence: req.body.precedence, autoSubmitted: req.body.autoSubmitted,
+    });
+    if (bulk.bulk && !isTestSender(from)) {
+      console.log(`Skipped bulk mail from ${from}: ${bulk.reasons.join(', ')}`);
+      return res.json({ success: true, skipped: true, reason: 'bulk', signals: bulk.reasons, response: '' });
+    }
+
     // Look the sender up by email first - most people never quote an order number.
     const [customer, cart] = await Promise.all([getCustomerContext(from), getOpenCart(from)]);
     const customerBlock = formatCustomer(customer);
@@ -1292,10 +1415,53 @@ app.post('/api/process-email', async (req, res) => {
     // Pass 1: understand the email and pull out the order number / product hints.
     const initial = await askClaude(body, faq, null, '', customerBlock, { subject, history, customerName, attachments: latestAttachments });
 
+    // Not a customer (vendor pitch, collab request, job seeker): keep it in the
+    // Other tab with a one-line note, but spend nothing more on it - no order
+    // lookups, no second pass, no three drafts, and the workflow makes no Gmail
+    // draft for it.
+    if (initial.audience === 'other' && !isTestSender(from)) {
+      const otherDoc = {
+        email: from, customerName, question: body, orderNumber: null, productType: initial.type || 'general_support',
+        shopifyOrderData: null, matchedProducts: [], customerOrders: customer ? customer.orders.map((o) => `${o.name} (${o.fulfillment}, $${o.total})`) : [],
+        customerTotalOrders: customer ? customer.totalOrders : null,
+        aiAnalysis: initial.summary, aiResponse: initial.response, threadId: threadId || null, subject: subject || null,
+        receivedAt, status: 'drafted', needsHuman: Boolean(initial.needsHuman), flagReason: initial.flagReason || null,
+        audience: 'other', requestedAddress: null,
+        drafts: [{ tone: 'short', label: 'Short & warm', text: initial.response }],
+        rawBody: String(rawBody), thread: threadMsgs, attachments: latestAttachments, customerProfile: null, cart: null, createdAt: new Date(),
+      };
+      let savedOther = null;
+      if (replace && threadId && dbReady && Lead) {
+        try {
+          const existing = await Lead.findOne({ threadId, status: { $ne: 'sent' } }).sort({ createdAt: -1 });
+          if (existing) {
+            delete otherDoc.createdAt;
+            if (existing.audienceSetBy === 'dashboard' && existing.audience) otherDoc.audience = existing.audience;
+            await Lead.findByIdAndUpdate(existing._id, otherDoc);
+            savedOther = await Lead.findById(existing._id).lean();
+          }
+        } catch (err) { console.error('Replace-by-thread (other) failed:', err.message); }
+      }
+      if (!savedOther) savedOther = await saveLead(otherDoc);
+      if (quiet) return res.json({ success: true, id: savedOther._id, audience: 'other', needsHuman: otherDoc.needsHuman, reply: '' });
+      return res.json({ success: true, lead: savedOther, audience: 'other', response: '', drafts: otherDoc.drafts });
+    }
+
     let shopifyData = null;
     let orderMismatch = null;
     if (initial.extractedOrderNumber) {
       shopifyData = await getShopifyOrder(initial.extractedOrderNumber);
+    }
+    // No number quoted but we know who they are: load the order they mean.
+    let assumedOrder = null;
+    const aboutTheirOrder = initial.type === 'order_inquiry' || initial.newAddress ||
+      /\b(my order|the order|order status|any update|update on|where is|still (coming|waiting)|hasn'?t (arrived|shipped|come)|not (arrived|received|shipped)|never (came|arrived)|when will|how long|tracking|shipped|delivered|refund|cancel|address|missing|damaged|broken|wrong (item|size|color|colour)|waiting)\b/i.test(`${subject || ''}\n${body}`);
+    if (!shopifyData && !initial.extractedOrderNumber && customer && aboutTheirOrder) {
+      assumedOrder = likelyOrderName(customer);
+      if (assumedOrder) {
+        shopifyData = await getShopifyOrder(assumedOrder);
+        if (shopifyData) shopifyData.assumed = true;
+      }
     }
 
     // Privacy: only show an order to the person it belongs to. Anyone can type
@@ -1354,7 +1520,7 @@ app.post('/api/process-email', async (req, res) => {
       email: from,
       customerName,
       question: body,
-      orderNumber: final.extractedOrderNumber || initial.extractedOrderNumber || null,
+      orderNumber: final.extractedOrderNumber || initial.extractedOrderNumber || (shopifyData && shopifyData.assumed ? shopifyData.orderNumber : null) || null,
       productType: final.type,
       shopifyOrderData: shopifyData,
       matchedProducts: products.map((p) => p.title),
@@ -2244,7 +2410,7 @@ app.get('/api/health', async (req, res) => {
   const want = ['read_all_orders', 'write_orders', 'write_customers', 'write_fulfillments', 'read_returns', 'write_returns'];
   res.json({
     status: 'ok',
-    version: 'v14.6 - photo pieces saved in the database; fetch-photos button',
+    version: 'v15.0 - bulk mail dropped before drafting; replies answer from per-item order status; likely order auto-loaded',
     shopifyScopes: sc.scopes,
     shopifyScopesMissing: sc.scopes ? want.filter((w) => !sc.scopes.includes(w)) : null,
     shopifyScopeError: sc.error,
