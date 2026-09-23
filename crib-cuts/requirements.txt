@@ -1,0 +1,17 @@
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+python-multipart==0.0.20
+pymongo==4.10.1
+mongomock==4.3.0
+anthropic>=0.40
+google-api-python-client==2.154.0
+google-auth==2.37.0
+requests>=2.32
+yt-dlp>=2025.1.1
+numpy>=1.26,<3
+opencv-python-headless>=4.10
+scenedetect==0.7.1
+rapidocr_onnxruntime==1.4.4
+Pillow>=10.4
+fonttools>=4.50
+brotli==1.1.0
