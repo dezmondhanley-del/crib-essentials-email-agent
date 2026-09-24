@@ -913,6 +913,7 @@ function renderConvo(){
         (draftGen[latest._id] === 'failed' ? 'Tone options unavailable' : 'Preparing Detailed and Formal…') + '</span></div>';
       ensureDrafts(latest);
     }
+    html += '<div class="notice needs" id="staleBanner" style="display:none"></div>';
     html += '<div class="box" id="box"><textarea id="composeBox" placeholder="Write email…">' + esc(drafts[0].text) + '</textarea>' +
       '<div class="thumbs" id="thumbs"></div>' +
       '<div class="bar"><button class="btn ghost" id="resetBtn">Reset</button>' +
@@ -923,7 +924,8 @@ function renderConvo(){
       '<span class="sendmsg" id="sendMsg"></span><button class="btn" id="sendBtn">Send email</button></div></div>';
     html += '<div class="hint"><span>' + (latest.threadId
       ? 'Replies to ' + esc(c.email) + ' in the original thread from support@1cribessential.com.'
-      : 'No email thread attached — this one can\'t be replied to from here.') + '</span></div>';
+      : 'No email thread attached — this one can\'t be replied to from here.') +
+      (latest.draftedAt ? ' Drafts written ' + esc(new Date(latest.draftedAt).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})) + (latest.draftedOrderState ? ' (order was ' + esc(fmtState(latest.draftedOrderState)) + ').' : '.') : '') + '</span></div>';
   }
   html += '</div>';
   el.innerHTML = html;
@@ -1012,11 +1014,8 @@ function renderConvo(){
     if(redraftBtn) redraftBtn.onclick = async function(){
       if(!getToken()){ askToken('Enter your dashboard token to redraft.'); return; }
       redraftBtn.disabled = true; redraftBtn.innerHTML = '&#8635; Redrafting…';
-      try{
-        await postJson('/api/leads/' + encodeURIComponent(latest._id) + '/refetch', {});
-        msgSet('good', 'Rewriting with the latest order data - new drafts appear here in about a minute.');
-        setTimeout(function(){ load(); }, 60000);
-      }catch(err){ redraftBtn.disabled = false; redraftBtn.innerHTML = '&#8635; Redraft'; msgSet('bad', 'Redraft failed: ' + err.message); }
+      await redraft(latest, 'Pulling the latest order data and rewriting the drafts (about 20 seconds)…');
+      var b = document.getElementById('redraftBtn'); if(b){ b.disabled = false; b.innerHTML = '&#8635; Redraft'; }
     };
     undoBtn.onclick = function(){
       if(beforePolish === null) return;
@@ -1080,7 +1079,61 @@ function fetchCustomer(c){
         : { profile: null, cart: null, candidates: [], failed: !d };
     })
     .catch(function(){ liveCustomer[key] = { profile: null, cart: null, candidates: [], failed: true }; })
-    .then(function(){ if(selectedKey === c.key) renderCustomer(); });
+    .then(function(){ if(selectedKey === c.key){ renderCustomer(); checkStale(c); } });
+}
+
+// ---- Drafts that fell behind the order ----
+// The drafts remember the order state they were written against
+// ("#2823|UNFULFILLED|0"). If the live lookup shows the order has since
+// shipped or picked up tracking, the drafts are rewritten on the spot so a
+// reply never says "still being made" about a box that already went out.
+var autoRedrafted = {};
+function liveOrderKey(c){
+  var l = c.latest, key = String(c.email || '').toLowerCase() || c.key;
+  var live = liveCustomer[key];
+  var p = live && !live.loading && live.profile;
+  if(!p || !l.orderNumber) return null;
+  var want = String(l.orderNumber).replace(/^#/, '');
+  var o = (p.orders || []).filter(function(x){ return String(x.name || '').replace(/^#/, '') === want; })[0];
+  if(!o) return null;
+  return '#' + want + '|' + (o.fulfillment || 'unfulfilled') + '|' + ((o.tracking || []).length);
+}
+function checkStale(c){
+  var l = c.latest;
+  if(!l || l.status === 'sent' || !l.draftedOrderState || autoRedrafted[l._id]) return;
+  var now = liveOrderKey(c);
+  if(!now || now === l.draftedOrderState) return;
+  autoRedrafted[l._id] = true;
+  redraft(l, 'Order ' + now.split('|')[0] + ' changed since these drafts were written (' + fmtState(l.draftedOrderState) + ' → ' + fmtState(now) + '). Rewriting the drafts now…');
+}
+function fmtState(k){
+  var parts = String(k || '').split('|');
+  var f = String(parts[1] || '').toLowerCase().replace(/_/g, ' ');
+  return f + (Number(parts[2]) > 0 ? ', ' + parts[2] + ' tracking' : '');
+}
+async function redraft(l, message){
+  var m = document.getElementById('sendMsg');
+  var banner = document.getElementById('staleBanner');
+  if(banner){ banner.style.display = 'block'; banner.innerHTML = '<b>Updating:</b> ' + esc(message); }
+  else if(m){ m.className = 'sendmsg good'; m.textContent = message; }
+  try{
+    var r = await fetch(API_URL + '/api/leads/' + encodeURIComponent(l._id) + '/redraft', {
+      method:'POST', headers:{ 'Content-Type':'application/json', 'x-dashboard-token': getToken() }, body: '{}'
+    });
+    var d = await r.json().catch(function(){ return {}; });
+    if(!r.ok) throw new Error(d.error || ('Server returned ' + r.status));
+    if(d.lead){
+      leads = leads.map(function(x){ return String(x._id) === String(d.lead._id) ? d.lead : x; });
+      group();
+      if(!userBusy()) render();
+    }
+    var m2 = document.getElementById('sendMsg');
+    if(m2){ m2.className = 'sendmsg good'; m2.textContent = 'Drafts rewritten with the latest order data.'; }
+  }catch(err){
+    var m3 = document.getElementById('sendMsg');
+    if(m3){ m3.className = 'sendmsg bad'; m3.textContent = 'Redraft failed: ' + err.message; }
+    var b2 = document.getElementById('staleBanner'); if(b2) b2.style.display = 'none';
+  }
 }
 // Manual lookup from the panel: an order number, an email, or a name.
 function lookupCustomer(c, term){
