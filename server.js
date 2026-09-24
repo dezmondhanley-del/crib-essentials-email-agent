@@ -63,6 +63,10 @@ const leadSchema = new mongoose.Schema(
     // Three ways of saying the same thing. drafts[0] is always the vetted
     // original; the others are tone rewrites that may not add facts.
     drafts: [{ tone: String, label: String, text: String }],
+    // When the drafts were written and the order state they saw, so a later
+    // shipment can trigger a rewrite.
+    draftedAt: Date,
+    draftedOrderState: String,
     // Shopify Inbox-style panel: who they are, what they bought, what's in their cart.
     customerProfile: Object,
     cart: Object,
@@ -1137,6 +1141,13 @@ ${teamNotes(shopifyData) ? teamNotes(shopifyData).trim() + '\n' : ''}WHAT TO SAY
   return orderBlock;
 }
 
+// A short fingerprint of what the drafts were written against, so a later
+// shipment or tracking change is detectable: "#2823|PARTIALLY_FULFILLED|1".
+function orderStateKey(o) {
+  if (!o) return '';
+  return `${o.orderName || o.orderNumber}|${o.fulfillmentStatus || 'unfulfilled'}|${(o.trackingInfo || []).length}`;
+}
+
 // No order number in the email, but the customer record has orders: pick the
 // one they almost certainly mean - the newest order that is not fully shipped,
 // else the newest order - and load it in full so the reply can answer from it.
@@ -1363,14 +1374,18 @@ Respond with ONLY this JSON, no markdown:
   }
 }
 
-app.post('/api/process-email', async (req, res) => {
+// The whole pipeline for one customer email, shared by the live route and
+// the redraft paths (Redraft button, Shopify fulfillment webhook). Returns
+// { status, json } so callers can answer HTTP or ignore it.
+async function processEmail(input) {
+  input = input || {};
   try {
-    const { from, customerName, body: rawBody, subject, threadId, faqContext, quiet, replace } = req.body;
+    const { from, customerName, body: rawBody, subject, threadId, faqContext, quiet, replace } = input;
     // When the customer actually sent it (Gmail's Date header, passed by the
     // workflow). Falls back to now for anything that arrives without it.
-    const receivedRaw = req.body.receivedAt ? new Date(req.body.receivedAt) : null;
+    const receivedRaw = input.receivedAt ? new Date(input.receivedAt) : null;
     const receivedAt = receivedRaw && !isNaN(receivedRaw.getTime()) ? receivedRaw : new Date();
-    if (!rawBody) return res.status(400).json({ error: 'Missing body in request' });
+    if (!rawBody) return { status: 400, json: ({ error: 'Missing body in request' }) };
 
     // Only the new message is "the email"; the quoted history rides along as context.
     const split = splitQuoted(rawBody);
@@ -1381,9 +1396,9 @@ app.post('/api/process-email', async (req, res) => {
     // Zap once it fetches threads) can pass it as `thread`: newest first, each
     // { name, email, date, text, mine }. It replaces the quoted-text parse.
     let threadMsgs = split.thread;
-    const latestAttachments = shapeAttachments(req.body.attachments);
-    if (Array.isArray(req.body.thread) && req.body.thread.length) {
-      threadMsgs = req.body.thread
+    const latestAttachments = shapeAttachments(input.attachments);
+    if (Array.isArray(input.thread) && input.thread.length) {
+      threadMsgs = input.thread
         .map((m) => ({
           name: String(m.name || ''), email: String(m.email || '').toLowerCase(), date: String(m.date || ''),
           text: stripSignatures(m.text), mine: Boolean(m.mine),
@@ -1401,12 +1416,12 @@ app.post('/api/process-email', async (req, res) => {
     // Bulk mail stops here: no Claude call, no draft, no Inbox row.
     const bulk = isBulkMail({
       from, subject, body,
-      labelIds: req.body.labelIds, listUnsubscribe: req.body.listUnsubscribe,
-      precedence: req.body.precedence, autoSubmitted: req.body.autoSubmitted,
+      labelIds: input.labelIds, listUnsubscribe: input.listUnsubscribe,
+      precedence: input.precedence, autoSubmitted: input.autoSubmitted,
     });
     if (bulk.bulk && !isTestSender(from)) {
       console.log(`Skipped bulk mail from ${from}: ${bulk.reasons.join(', ')}`);
-      return res.json({ success: true, skipped: true, reason: 'bulk', signals: bulk.reasons, response: '' });
+      return { status: 200, json: ({ success: true, skipped: true, reason: 'bulk', signals: bulk.reasons, response: '' }) };
     }
 
     // Look the sender up by email first - most people never quote an order number.
@@ -1444,8 +1459,8 @@ app.post('/api/process-email', async (req, res) => {
         } catch (err) { console.error('Replace-by-thread (other) failed:', err.message); }
       }
       if (!savedOther) savedOther = await saveLead(otherDoc);
-      if (quiet) return res.json({ success: true, id: savedOther._id, audience: 'other', needsHuman: otherDoc.needsHuman, reply: '' });
-      return res.json({ success: true, lead: savedOther, audience: 'other', response: '', drafts: otherDoc.drafts });
+      if (quiet) return { status: 200, json: ({ success: true, id: savedOther._id, audience: 'other', needsHuman: otherDoc.needsHuman, reply: '' }) };
+      return { status: 200, json: ({ success: true, lead: savedOther, audience: 'other', response: '', drafts: otherDoc.drafts }) };
     }
 
     let shopifyData = null;
@@ -1455,6 +1470,12 @@ app.post('/api/process-email', async (req, res) => {
     }
     // No number quoted but we know who they are: load the order they mean.
     let assumedOrder = null;
+    // A redraft keeps talking about the order the conversation was already
+    // about, even if the customer never typed its number.
+    if (!shopifyData && !initial.extractedOrderNumber && input.orderHint) {
+      shopifyData = await getShopifyOrder(input.orderHint);
+      if (shopifyData) shopifyData.assumed = true;
+    }
     const aboutTheirOrder = initial.type === 'order_inquiry' || initial.newAddress ||
       /\b(my order|the order|order status|any update|update on|where is|still (coming|waiting)|hasn'?t (arrived|shipped|come)|not (arrived|received|shipped)|never (came|arrived)|when will|how long|tracking|shipped|delivered|refund|cancel|address|missing|damaged|broken|wrong (item|size|color|colour)|waiting)\b/i.test(`${subject || ''}\n${body}`);
     if (!shopifyData && !initial.extractedOrderNumber && customer && aboutTheirOrder) {
@@ -1541,6 +1562,8 @@ app.post('/api/process-email', async (req, res) => {
         : (final.audience === 'customer' ? 'customer' : guessAudience(subject, body, from)),
       requestedAddress: cleanRequestedAddress(final.newAddress || initial.newAddress),
       drafts: drafts,
+      draftedAt: new Date(),
+      draftedOrderState: orderStateKey(shopifyData),
       rawBody: String(rawBody),
       thread: threadMsgs,
       attachments: latestAttachments,
@@ -1594,16 +1617,26 @@ app.post('/api/process-email', async (req, res) => {
         console.error('Replace-by-thread failed, saving fresh:', err.message);
       }
     }
+    // Same idea without a database (local runs): overwrite the open row.
+    if (!saved && replace && threadId && !(dbReady && Lead) && !isTestSender(from)) {
+      const existing = memoryLeads.find((l) => l.threadId === threadId && l.status !== 'sent');
+      if (existing) { Object.assign(existing, leadDoc, { _id: existing._id, createdAt: existing.createdAt }); saved = existing; }
+    }
     if (!saved) saved = await saveLead(leadDoc);
 
     if (quiet) {
-      return res.json({ success: true, id: saved._id, needsHuman, flagReason, replaced: Boolean(replace && saved && saved.createdAt && leadDoc.createdAt === undefined), reply: final.response });
+      return { status: 200, json: ({ success: true, id: saved._id, needsHuman, flagReason, replaced: Boolean(replace && saved && saved.createdAt && leadDoc.createdAt === undefined), reply: final.response }) };
     }
-    res.json({ success: true, lead: saved, response: final.response, drafts: drafts });
+    return { status: 200, json: { success: true, lead: saved, response: final.response, drafts: drafts } };
   } catch (error) {
     console.error('Error processing email:', error);
-    res.status(500).json({ error: error.message });
+    return { status: 500, json: { error: error.message } };
   }
+}
+
+app.post('/api/process-email', async (req, res) => {
+  const out = await processEmail(req.body);
+  res.status(out.status).json(out.json);
 });
 
 // Customer emails are private, so reading leads needs the same dashboard
@@ -2193,6 +2226,131 @@ app.post('/api/leads/:id/refetch', async (req, res) => {
   }
 });
 
+// Rewrite the drafts for one conversation from what is already stored (the
+// email, the thread, the photos) against LIVE Shopify data. No Gmail round
+// trip, no Zapier - about 20 seconds. Used by the Redraft button and by the
+// Shopify fulfillment webhook when an order ships after the drafts were made.
+const redraftInFlight = new Map();
+async function redraftLead(lead, why) {
+  if (!lead || lead.status === 'sent') return { skipped: 'sent' };
+  if (!lead.rawBody && !lead.question) return { skipped: 'nothing stored' };
+  const key = String(lead._id);
+  if (redraftInFlight.has(key)) return { skipped: 'in progress' };
+  redraftInFlight.set(key, Date.now());
+  try {
+    const payload = {
+      from: lead.email, customerName: lead.customerName, subject: lead.subject,
+      body: lead.rawBody || lead.question, threadId: lead.threadId,
+      thread: Array.isArray(lead.thread) ? lead.thread : [],
+      attachments: Array.isArray(lead.attachments) ? lead.attachments : [],
+      receivedAt: lead.receivedAt, orderHint: lead.orderNumber || null, replace: true, quiet: true,
+    };
+    // Reuse the same message so the replace-by-thread logic updates this row.
+    const out = await processEmail(payload);
+    console.log(`Redrafted ${key} (${why}): ${out.status}`);
+    return out.json;
+  } finally {
+    redraftInFlight.delete(key);
+  }
+}
+
+app.post('/api/leads/:id/redraft', async (req, res) => {
+  if (!checkToken(req, res)) return;
+  try {
+    const lead = await findLead(req.params.id);
+    if (!lead) return res.status(404).json({ error: 'Not found' });
+    if (lead.status === 'sent') return res.status(400).json({ error: 'Already replied - nothing to redraft.' });
+    const out = await redraftLead(lead, 'button');
+    if (out && out.skipped) return res.status(409).json({ error: `Redraft skipped: ${out.skipped}` });
+    const fresh = await findLead(req.params.id);
+    res.json({ ok: true, lead: fresh });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Shopify tells us the moment an order ships (fulfillments/create) or gets a
+// tracking number (fulfillments/update). Any open conversation about that
+// order - or from that customer - gets its drafts rewritten right away, so
+// the reply never says "still being made" about a box that just went out.
+const SELF_URL = process.env.SELF_URL || process.env.RENDER_EXTERNAL_URL || '';
+function verifyShopifyHmac(req) {
+  const secret = process.env.SHOPIFY_CLIENT_SECRET;
+  const given = String(req.get('x-shopify-hmac-sha256') || '');
+  if (!secret || !given || !req.rawBody) return false;
+  const digest = require('crypto').createHmac('sha256', secret).update(req.rawBody).digest('base64');
+  try { return require('crypto').timingSafeEqual(Buffer.from(digest), Buffer.from(given)); } catch (e) { return false; }
+}
+const recentlyRedrafted = new Map(); // leadId -> time, so a burst of webhooks redrafts once
+app.post('/webhooks/shopify', async (req, res) => {
+  if (!verifyShopifyHmac(req)) return res.status(401).send('bad hmac');
+  res.status(200).send('ok'); // answer first; Shopify retries anything slower than 5s
+  try {
+    const topic = String(req.get('x-shopify-topic') || '');
+    const b = req.body || {};
+    // fulfillments/* carry order_id + email; orders/* carry name + email.
+    const email = String(b.email || (b.destination && b.destination.email) || '').toLowerCase();
+    const orderName = String(b.name || b.order_name || '').replace(/^#/, '');
+    const orderId = b.order_id ? String(b.order_id) : (b.id && /^orders\//.test(topic) ? String(b.id) : '');
+    const or = [];
+    if (orderName) or.push({ orderNumber: orderName });
+    if (email) or.push({ email });
+    if (orderId) or.push({ 'shopifyOrderData.gid': `gid://shopify/Order/${orderId}` });
+    if (!or.length) return;
+    const matches = (l) => l.status !== 'sent' && l.audience !== 'other' && (
+      (orderName && String(l.orderNumber || '') === orderName) ||
+      (email && String(l.email || '').toLowerCase() === email) ||
+      (orderId && l.shopifyOrderData && l.shopifyOrderData.gid === `gid://shopify/Order/${orderId}`));
+    const open = dbReady && Lead
+      ? await Lead.find({ status: { $ne: 'sent' }, audience: { $ne: 'other' }, $or: or }).sort({ createdAt: -1 }).limit(5).lean()
+      : memoryLeads.filter(matches).slice(0, 5);
+    for (const lead of open) {
+      const last = recentlyRedrafted.get(String(lead._id)) || 0;
+      if (Date.now() - last < 10 * 60 * 1000) continue;
+      recentlyRedrafted.set(String(lead._id), Date.now());
+      redraftLead(lead, `shopify ${topic}`).catch((e) => console.error('Webhook redraft failed:', e.message));
+    }
+    console.log(`Shopify webhook ${topic}: order ${orderName || orderId}, ${open.length} open conversation(s)`);
+  } catch (err) {
+    console.error('Shopify webhook handling failed:', err.message);
+  }
+});
+
+// Make sure Shopify is subscribed to send us those events. Idempotent: runs
+// at boot, creates only what is missing. Needs SELF_URL (Render sets
+// RENDER_EXTERNAL_URL automatically).
+async function ensureShopifyWebhooks() {
+  if (!SELF_URL) { console.log('Shopify webhooks: no SELF_URL, skipping'); return; }
+  const callback = `${SELF_URL.replace(/\/$/, '')}/webhooks/shopify`;
+  try {
+    const existing = await shopifyGraphQL(`{ webhookSubscriptions(first: 50) { nodes { id topic endpoint { __typename ... on WebhookHttpEndpoint { callbackUrl } } } } }`, {});
+    const have = new Set(((existing.webhookSubscriptions && existing.webhookSubscriptions.nodes) || [])
+      .filter((n) => n.endpoint && n.endpoint.callbackUrl === callback).map((n) => n.topic));
+    for (const topic of ['FULFILLMENTS_CREATE', 'FULFILLMENTS_UPDATE']) {
+      if (have.has(topic)) continue;
+      const r = await shopifyGraphQL(`mutation($topic: WebhookSubscriptionTopic!, $sub: WebhookSubscriptionInput!) {
+        webhookSubscriptionCreate(topic: $topic, webhookSubscription: $sub) { userErrors { field message } webhookSubscription { id } } }`,
+        { topic, sub: { callbackUrl: callback, format: 'JSON' } });
+      const errs = r.webhookSubscriptionCreate && r.webhookSubscriptionCreate.userErrors;
+      if (errs && errs.length) console.error(`Shopify webhook ${topic}:`, errs.map((e) => e.message).join('; '));
+      else console.log(`Shopify webhook ${topic} subscribed -> ${callback}`);
+    }
+  } catch (err) {
+    console.error('Shopify webhook setup failed:', err.message);
+  }
+}
+let webhookStatus = { at: 0, topics: [], error: '' };
+async function ensureShopifyWebhooksAndRecord() {
+  await ensureShopifyWebhooks();
+  try {
+    const callback = `${SELF_URL.replace(/\/$/, '')}/webhooks/shopify`;
+    const existing = await shopifyGraphQL(`{ webhookSubscriptions(first: 50) { nodes { topic endpoint { __typename ... on WebhookHttpEndpoint { callbackUrl } } } } }`, {});
+    webhookStatus = { at: Date.now(), error: '', topics: ((existing.webhookSubscriptions && existing.webhookSubscriptions.nodes) || [])
+      .filter((n) => n.endpoint && n.endpoint.callbackUrl === callback).map((n) => n.topic) };
+  } catch (err) { webhookStatus = { at: Date.now(), topics: [], error: err.message }; }
+}
+setTimeout(() => { ensureShopifyWebhooksAndRecord(); }, 15000);
+
 app.get('/api/att/:messageId/:attachmentId', async (req, res) => {
   if (!readGate(req, res)) return;
   try {
@@ -2433,7 +2591,7 @@ app.get('/api/health', async (req, res) => {
   const want = ['read_all_orders', 'write_orders', 'write_customers', 'write_fulfillments', 'read_returns', 'write_returns'];
   res.json({
     status: 'ok',
-    version: 'v15.1 - iPod mirror 2-week window, extras after 30 days, refund-as-option; extras reminder on send',
+    version: 'v15.2 - drafts rewrite themselves when an order ships (Shopify webhook); Redraft runs on the server in ~20s',
     shopifyScopes: sc.scopes,
     shopifyScopesMissing: sc.scopes ? want.filter((w) => !sc.scopes.includes(w)) : null,
     shopifyScopeError: sc.error,
@@ -2441,6 +2599,7 @@ app.get('/api/health', async (req, res) => {
     dbError: dbError || null,
     leadsStored: leadCount,
     faqSource: faqSource(),
+    shopifyWebhooks: { url: SELF_URL ? `${SELF_URL.replace(/\/$/, '')}/webhooks/shopify` : null, topics: webhookStatus.topics, error: webhookStatus.error },
     env: {
       CLAUDE_API_KEY: process.env.CLAUDE_API_KEY ? 'set' : 'MISSING',
       SHOPIFY_CLIENT_ID: SHOPIFY_CLIENT_ID ? 'set' : 'MISSING',
