@@ -1,0 +1,9 @@
+nbsp:[ ]end
+endash:[–]end
+emdash:[—]end
+bullet:[•]end
+ellipsis:[…]end
+times:[×]end
+arrow:[→]end
+line2
+line3
