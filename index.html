@@ -294,7 +294,8 @@
   .ip{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:600;margin-left:6px;vertical-align:middle;white-space:nowrap}
   .ip.no{background:var(--accent-soft);color:var(--accent-ink)}
   .ip.yes{background:var(--good-soft);color:var(--good)}
-  .cg{font-size:11px;color:var(--faint);margin-left:6px}
+  .linkbtn{background:none;border:0;padding:0;margin-left:8px;font:inherit;color:var(--ink);text-decoration:underline;cursor:pointer}
+.cg{font-size:11px;color:var(--faint);margin-left:6px}
 .cg.none{opacity:.7;font-style:italic}
 .cogs{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:12px;color:var(--faint);margin:4px 0 2px;padding-top:6px;border-top:1px dashed var(--line)}
 .cogs .good{color:var(--sage,#7fa88a)}
@@ -912,6 +913,9 @@ function renderConvo(){
     html += bubble('them', l.question || '', 'Sent ' + stamp(sentAt(l)), '', l.attachments);
     if(l.status === 'sent'){
       html += bubble('us', l.sentBody || l.aiResponse || '', 'Replied ' + stamp(l.sentAt), '', l.sentAttachments);
+      (l.followUps || []).forEach(function(f){
+        html += bubble('us', f.body || '', 'Follow-up sent ' + stamp(f.sentAt), '', f.attachments);
+      });
     } else if(idx < c.items.length - 1){
       html += bubble('us draft', l.aiResponse || '', 'Draft — never sent');
     }
@@ -923,8 +927,19 @@ function renderConvo(){
   html += '<div class="compose">';
   html += addressBlock(c);
   html += remindBlock(c);
-  if(latest.status === 'sent'){
-    html += '<div class="notice sent">Replied ' + esc(new Date(latest.sentAt).toLocaleString()) + '. A new email from them will reopen this conversation.</div>';
+  var following = latest.status === 'sent' && !!followOpen[c.key];
+  if(latest.status === 'sent' && !following){
+    html += '<div class="notice sent">Replied ' + esc(new Date(latest.sentAt).toLocaleString()) + '. A new email from them will reopen this conversation.' +
+      (latest.threadId ? ' <button class="linkbtn" id="followBtn">Send another message</button>' : '') + '</div>';
+  } else if(following){
+    html += '<div class="notice sent">Follow-up to ' + esc(c.email) + ' in the same thread. <button class="linkbtn" id="followCancel">Cancel</button></div>';
+    html += '<div class="box" id="box"><textarea id="composeBox" placeholder="Write the follow-up in your own words, then tap Polish to clean it up…"></textarea>' +
+      '<div class="thumbs" id="thumbs"></div>' +
+      '<div class="bar">' +
+      '<label class="attach" title="Attach up to 4 photos">&#128247; Photo<input type="file" id="photoInput" accept="image/*" multiple></label>' +
+      '<button class="attach polish" id="polishBtn" type="button" title="Fix spelling and grammar - keeps every fact you wrote">&#10024; Polish</button>' +
+      '<button class="attach" id="undoBtn" type="button" style="display:none">Undo</button><span class="grow"></span>' +
+      '<span class="sendmsg" id="sendMsg"></span><button class="btn" id="sendBtn">Send follow-up</button></div></div>';
   } else {
     if(needsMe(latest)){
       html += '<div class="notice needs"><b>Needs you:</b> ' + esc(latest.flagReason || 'Claude could not finish this one — read the draft and fill in the answer before sending.') + '</div>';
@@ -955,7 +970,12 @@ function renderConvo(){
   }
   html += '</div>';
   el.innerHTML = html;
-  boxBaseline = (latest.status === 'sent') ? [] : drafts.map(function(d){ return d.text; }).concat(['']);
+  boxBaseline = (latest.status === 'sent') ? [''] : drafts.map(function(d){ return d.text; }).concat(['']);
+  var fb = document.getElementById('followBtn');
+  if(fb) fb.onclick = function(){ followOpen[c.key] = true; render(); setTimeout(function(){ var b = document.getElementById('composeBox'); if(b) b.focus(); }, 50); };
+  var fc = document.getElementById('followCancel');
+  if(fc) fc.onclick = function(){ delete followOpen[c.key]; render(); };
+  if(following) wireFollowUp(latest, c);
 
   var msgs = document.getElementById('msgs');
   if(msgs) msgs.scrollTop = msgs.scrollHeight;
@@ -980,7 +1000,7 @@ function renderConvo(){
   wireFetch();
 
   var sendBtn = document.getElementById('sendBtn');
-  if(sendBtn){
+  if(sendBtn && !following){
     if(!latest.threadId) sendBtn.disabled = true;
     sendBtn.onclick = function(){ sendReply(latest, sendBtn); };
     var current = 0, box = document.getElementById('composeBox');
@@ -1393,6 +1413,31 @@ async function saveAddress(gid, oname, c, btn){
 }
 
 var openOrders = {};
+var followOpen = {};
+// The follow-up box: own words only (no AI drafts), Photo, Polish, Send.
+function wireFollowUp(latest, c){
+  var box = document.getElementById('composeBox'), sendBtn = document.getElementById('sendBtn');
+  if(!box || !sendBtn) return;
+  sendBtn.onclick = function(){ sendReply(latest, sendBtn, function(){ delete followOpen[c.key]; }); };
+  wirePhotos(c);
+  var polishBtn = document.getElementById('polishBtn'), undoBtn = document.getElementById('undoBtn'), before = null;
+  function msgSet(cls, text){ var m = document.getElementById('sendMsg'); if(m){ m.className = 'sendmsg' + (cls ? ' ' + cls : ''); m.textContent = text; } }
+  polishBtn.onclick = async function(){
+    var text = box.value.trim();
+    if(!text){ msgSet('bad', 'Type something first.'); return; }
+    if(!getToken()){ askToken('Enter your dashboard token to use Polish.'); return; }
+    polishBtn.disabled = true; polishBtn.innerHTML = '&#10024; Polishing…'; msgSet('', '');
+    try{
+      var r = await fetch(API_URL + '/api/leads/' + encodeURIComponent(latest._id) + '/polish', {
+        method:'POST', headers:{ 'Content-Type':'application/json', 'x-dashboard-token': getToken() }, body: JSON.stringify({ text: text }) });
+      var d = await r.json().catch(function(){ return {}; });
+      if(!r.ok) throw new Error(d.error || ('Server returned ' + r.status));
+      before = box.value; box.value = d.text; undoBtn.style.display = 'inline-flex'; msgSet('good', 'Polished - read it over, then send.');
+    }catch(err){ msgSet('bad', 'Polish failed: ' + err.message); }
+    finally{ polishBtn.disabled = false; polishBtn.innerHTML = '&#10024; Polish'; }
+  };
+  undoBtn.onclick = function(){ if(before === null) return; box.value = before; before = null; undoBtn.style.display = 'none'; msgSet('', ''); };
+}
 // Cost of goods for one order, from Shopify's "cost per item". Revenue is
 // what the customer actually paid per line (after discounts); margin is what
 // is left before shipping and fees. Only shown here - the bot never sees it.
@@ -1524,7 +1569,7 @@ function wirePhotos(c){
   };
 }
 
-async function sendReply(lead, btn){
+async function sendReply(lead, btn, after){
   var box = document.getElementById('composeBox');
   var msg = document.getElementById('sendMsg');
   var text = (box.value || '').trim();
@@ -1548,6 +1593,8 @@ async function sendReply(lead, btn){
     }
     msg.className='sendmsg good'; msg.textContent='Sent.';
     delete pendingPhotos[key];
+    if(typeof after === 'function') after();
+    box.value = ''; boxBaseline = ['']; // nothing unsent left, so the refresh may redraw
     await load();
   }catch(err){
     msg.className='sendmsg bad'; msg.textContent = err.message; btn.disabled = false;
