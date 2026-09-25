@@ -413,14 +413,18 @@ function matches(c, q){
   var hay = [c.name, c.email, c.latest.subject, c.latest.orderNumber, c.latest.question, c.latest.aiAnalysis].join(' ').toLowerCase();
   return hay.indexOf(q) !== -1;
 }
+// "Busy" means Dezmond has typed something of his own into the reply box.
+// The box is compared against the drafts it was RENDERED from (boxBaseline),
+// not the latest data - otherwise, the moment the server rewrites the drafts
+// (order shipped, Redraft), the old text in the box no longer matches and the
+// screen would refuse to refresh forever.
+var boxBaseline = [];
 function userBusy(){
   var a = document.activeElement;
   if(a && (a.tagName === 'TEXTAREA' || (a.tagName === 'INPUT' && a.id !== 'q'))) return true;
   var box = document.getElementById('composeBox');
-  var c = selected();
-  if(box && c){
-    var drafts = draftsFor(c.latest);
-    var same = drafts.some(function(d){ return d.text === box.value; });
+  if(box && boxBaseline.length){
+    var same = boxBaseline.some(function(t){ return t === box.value; });
     if(!same) return true;
   }
   return false;
@@ -929,6 +933,7 @@ function renderConvo(){
   }
   html += '</div>';
   el.innerHTML = html;
+  boxBaseline = (latest.status === 'sent') ? [] : drafts.map(function(d){ return d.text; }).concat(['']);
 
   var msgs = document.getElementById('msgs');
   if(msgs) msgs.scrollTop = msgs.scrollHeight;
