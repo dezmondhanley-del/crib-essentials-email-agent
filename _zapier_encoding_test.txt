@@ -1,1 +1,2 @@
-data:text/plain;base64,bmJzcDpbwqBdZW5kCmVuZGFzaDpb4oCTXWVuZAplbWRhc2g6W+KAlF1lbmQK
+prev = t;
+    t = t.replace(/[\s ]*sent from my \w+[^\n]*$/i, '').trimEnd();
