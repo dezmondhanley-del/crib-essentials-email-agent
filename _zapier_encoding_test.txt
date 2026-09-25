@@ -1,2 +1,9 @@
-prev = t;
-    t = t.replace(/[\s ]*sent from my \w+[^\n]*$/i, '').trimEnd();
+nbsp:[ ]end
+endash:[–]end
+emdash:[—]end
+bullet:[•]end
+ellipsis:[…]end
+times:[×]end
+arrow:[→]end
+line2
+line3
