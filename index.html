@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>Crib Essentials — Inbox</title>
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -330,9 +330,25 @@
     .msgs{padding:12px 12px;min-height:30vh}
     .remind .rlink{font-size:12px;padding:5px 10px}
     .notice{font-size:12.5px;padding:8px 10px}
-    .tones{gap:4px}
-    .tone{font-size:11.5px;padding:4px 9px}
+    .tones{gap:4px;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding-bottom:2px}
+    .tones::-webkit-scrollbar{display:none}
+    .tone{font-size:11.5px;padding:4px 9px;white-space:nowrap;flex:none}
     .addr{padding:8px 10px}
+    /* iPhone zooms the whole page when a field smaller than 16px gets focus,
+       and stays zoomed - that is the "too zoomed in" feeling. 16px stops it. */
+    input,textarea,select{font-size:16px !important}
+    .search{padding:6px 10px}
+    .search input{padding:7px 12px}
+    .row{padding:10px 12px;gap:9px}
+    .row .nm{font-size:13.5px}
+    .m{padding:9px 12px;font-size:13.5px;border-radius:14px}
+    .bar{gap:6px;padding:6px 6px}
+    .attach{padding:6px 9px;font-size:12px;gap:4px}
+    .btn{padding:7px 12px;font-size:13px}
+    .hint{font-size:11px}
+    .cust{padding:14px 14px 40px}
+    .cust .nm{font-size:15px}
+    .stat b{font-size:14px}
   }
 </style>
 </head>
