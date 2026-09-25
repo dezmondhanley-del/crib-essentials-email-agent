@@ -1138,8 +1138,8 @@ CUSTOMER ORDER (live from Shopify${shopifyData.assumed ? ' - the customer did no
 Order: ${shopifyData.orderName || shopifyData.orderNumber}
 Placed: ${String(shopifyData.createdAt).slice(0, 10)}${age !== null ? ` (${age} days ago)` : ''} - this is the date the ORDER was placed, NOT the date it shipped. Never call this the ship date.
 Payment status: ${shopifyData.status}
-Fulfillment stat‘s: ${shopifyData.fulfillmentStatus || 'unfulfilled'}
-Each item and where itc stands RIGHT NOW (this is the answer to "where is my order" - state it, do not say you are checking it):
+Fulfillment status: ${shopifyData.fulfillmentStatus || 'unfulfilled'}
+Each item and where it stands RIGHT NOW (this is the answer to "where is my order" - state it, do not say you are checking it):
 ${st.lines}
 ${teamNotes(shopifyData) ? teamNotes(shopifyData).trim() + '\n' : ''}WHAT TO SAY ABOUT THIS ORDER (worked out for you from the data above and the policies): ${teamNotes(shopifyData) ? 'The team notes above are the ship timing - give them to the customer as the answer. ' : ''}${st.verdict}
 `;
@@ -1180,8 +1180,78 @@ ${extra.customerName ? `THE CUSTOMER WROTE AS: "${extra.customerName}". If you g
 
 CUSTOMER'S NEW MESSAGE (this is what you are replying to - answer THIS):
 "${email}"
-${extra.attachments && extra.attachments.length ? `(They attached ${extra.attachments.length} file${extra.attachments.length === 1 ? '' : 's'} : ${extra.attachments.map((a) => a.filename).join(', ')}. You cannot see the files. If they are photos of a problem, thank them for the photos and sl¹ the team is looking at them - never describe what the photos show, and if the policies ask for photos, do not ask for them again.)` : ''}${extra.history ? `
-EARLIER MESSAGES IN THIS THREAD (quoted history, oldest at the bo}ÛJKˆÛÛ^Û›Kˆ\ÙHÙ\™H[™XYHX[Ú]HÈ“Õ[œİÙ\ˆ[HYØF–âæBFòäõB6öæf—&Ò÷"&WVBF†–æw2g&öÒF†VÒâW6RF†VÒöæÇ’FòVæFW'7FæBv†BF†RæWrÖW76vR&VfW'2Fò‡v†–6‚÷&FW"Âv†–6‚FG&W72Âv†Bv2Ç&VG’&öÖ—6VB“ £ÃÃÀ¢G¶W‡G&æ†—7F÷'—Ğ£ããà¦¢rwĞ¥5Dõ$RôÄ”4”U2äB5U%$TåBäõD”4U3 ¢G¶f6öçFW‡GĞ¢G¶7W7FöÖW$&Æö6²ÇÂrwÒG¶÷&FW$&Æö6·ÒG·&öGV7D&Æö6·Ğ ¥%TÄU3 ¢Òå5tU"ÂDòäõBDTdU"â–b5U5DôÔU"õ$DU"&Æö6²÷"5U5DôÔU"$T4õ$B—26†÷vâ&÷fRÂ—BÇ&VG’FVÆÇ2–÷Rv†WF†W"V6‚—FVÒ†26†—VBÂ—G2G&6¶–ærÂ†÷rÆöærvòF†R÷&FW"v2Æ6VBæBv†WF†W"—B—27B—G2v–æF÷râWBF†÷6Rf7G2–âF†R&WÇ’2F†Rç7vW"â&WÇ’v†÷6R7V'7Fæ6R—2&ÆWBÖR6†V6²òvRvÆÂvWB&6²Fò–÷Rò’vÒÆöö¶–ær–çFò—B"v†–ÆRF†R÷&FW"FF—26—GF–ær&÷fR—2u$ôärâF†RöæÇ’F†–ær–÷RÖ’6’–÷R&R6†V6¶–ær—2F†RW†7BF’âVç6†—VB–V6Rv–ÆÂvò÷WBÒæBöæÇ’eDU"7FF–ærWfW'—F†–ærF†RFFFöW26’à¢Òv†VâF†R7W7FöÖW"6·2'v†W&R—2×’÷&FW""Â&ç’WFFR"Â'7F–ÆÂ6öÖ–æsò"Â'v†Vâv–ÆÂ—B6†—#¢F†R&WÇ’×W7BæÖRF†R÷&FW"çVÖ&W"Â6’f÷"V6‚—FVÒv†WF†W"—B†26†—VB‡v—F‚F†RG&6¶–ærçVÖ&W"’÷"—27F–ÆÂ&V–ærÖFRÂæBföÆÆ÷rF†R%t„BDò4’$õUBD„•2õ$DU""Æ–æR–bF†W&R—2öæRà¢ÒÖ÷7B—FV×2&R†æFÖFRFò÷&FW"âæWfW"&öÖ—6RFVÆ—fW'’FFRf7FW"F†âF†R7FFVB&öGV7F–öâF–ÖRà¢Òt„”4‚4õU$4RDò$TÄ”UdRÂ–âF†—2÷&FW"Â†–v†W7Bf—'7C ¢â5U%$TåBäõD”4U2–âF†RöÆ–6–W2ÒF†W6R&Rw&—GFVâFöF’æB&VBWfW'—F†–ærVÇ6Rà¢"âF†R&W7BöbF†R5Dõ$RôÄ”4”U2&÷fRÒF†W6R&R¶WBWFòFFR'’†æBà¢2â&öGV7BvRFW67&—F–öâÒW6R—BöæÇ’f÷"FWF–Ç2F†RöÆ–6–W2Fòæ÷B6÷fW"Â7V6‚2F–ÖVç6–öç2ÂÖFW&–Ç2÷"–ç7FÆÆF–öâà¢–bF†RöÆ–6–W2æB&öGV7BvRF—6w&VRöâ&öGV7F–öâF–ÖRÂF†RöÆ–6–W2&R&–v‡BæBF†R&öGV7BvR—2÷WBöbFFRâæWfW"V÷FR&öGV7BvRF–ÖVÆ–æRF†B6öçG&F–7G2F†RöÆ–6–W2à¢ÒæWfW"wVW72â—FVÒw2F–ÖVÆ–æRg&öÒ6–Ö–Æ"×6÷VæF–ær&öGV7Bâ–bæV—F†W"F†RöÆ–6–W2æ÷"—G2&öGV7BvR6÷fW'2—BÂFòæ÷B7FFRF–ÖVÆ–æRBÆÂà¢Òâ÷&FW"6†—2æò6ööæW"F†â—G24ÄõtU5B—FVÒVæÆW72F†RöÆ–6–W26’—FV×26†—2F†W’&R&VG’â–FVçF–g’F†R6Æ÷vW7B—FVÒæBÆVBv—F‚—G2F–ÖVÆ–æS²æWfW"–×Ç’F†R÷&FW"—2æV&Ç’&VG’&V6W6RF†RV–6²—FV×2&Rà¢ÒæWfW"7FFRv†W&R7V6–f–2&6VÂ÷"—FVÒ7W'&VçFÇ’—2VæÆW2Æ—fR÷&FW"FF—26†÷vâ&÷fRâv—F†÷WB—BÂFW67&–&Rv†BW7VÆÇ’†VáÌ…¹…Í¬™½ÈÑ¡”½É‘•È¹Õµ‰•È¸(´%˜„¹½Ñ¥”…‰½Ù”µ•¹Ñ¥½¹Ì„‘•±…ä½È„Ñ•µÁ½É…Éä¡…¹”°É•™±•Ğ¥Ğ¥¸å½ÕÈ…¹Íİ•È¸(´UÍ”Ñ¡”ÕÍÑ½µ•ÈÉ•½É…‰½Ù”Ñ¼İ½É¬½ÕĞİ¡¥ ½É‘•ÈÑ¡•äµ•…¸°•Ù•¸¥˜Ñ¡•ä¹•Ù•È…Ù”…¸½É‘•È¹Õµ‰•È¸I•™•ÈÑ¼½É‘•ÉÌ‰ä¹Õµ‰•ÈÍ¼Ñ¡•É”¥Ì¹¼½¹™ÕÍ¥½¸¸(´%˜Ñ¡•ä¡…Ù”µ½É”Ñ¡…¸½¹”½É‘•È°…‘‘É•ÍÌ•… ½¹”Ñ¡•ä…É”…Í­¥¹œ…‰½ÕĞÍ•Á…É…Ñ•±ä…¹Í…äÁ±…¥¹±äİ¡¥ ¡…ÌÍ¡¥ÁÁ•…¹İ¡¥ ¡…Ì¹½Ğ¸(´9•Ù•ÈÍ…ä…¸½É‘•È¡…ÌÍ¡¥ÁÁ•Õ¹±•ÍÌ¥ÑÌ™Õ±™¥±±µ•¹ĞÍÑ…ÑÕÌÍ…åÌÍ¼°…¹¹•Ù•È¥¹Ù•¹ĞÑÉ…­¥¹œ¹Õµ‰•ÉÌ°‘…Ñ•Ì°ÁÉ¥•Ì½ÈÍÑ½¬±•Ù•±Ì¸(´%˜Ñ¡•ä…É”…Í­¥¹œå½ÔÑ¼!9Í½µ•Ñ¡¥¹œ€´„Í¡¥ÁÁ¥¹œ…‘‘É•ÍÌ°„…¹•±±…Ñ¥½¸°„É•™Õ¹°Íİ…ÁÁ¥¹œ…¸¥Ñ•´€´å½Ô…¹¹½Ğ‘¼¥Ğ¸M…ä„¡Õµ…¸İ¥±°Ñ…­”…É”½˜¥Ğ…¹½¹™¥É´Í¡½ÉÑ±ä¸9•Ù•È¥µÁ±äÑ¡”¡…¹”¡…Ì‰••¸µ…‘”¸%˜…¸½É‘•ÈÑ¡•äİ…¹Ğ¡…¹•¡…Ì…±É•…‘äÍ¡¥ÁÁ•°Í…äÍ¼¡½¹•ÍÑ±ä¸(´%˜Ñ¡•ä…É”„É•Á•…ĞÕÍÑ½µ•È°„‰É¥•˜İ½É½˜Ñ¡…¹­Ì¥Ìİ•±½µ”°‰ÕĞ‘¼¹½Ğ½Ù•É‘¼¥Ğ¸(´9•Ù•ÈİÉ¥Ñ”Ñ¡”¹…µ”€‰•éµ½¹ˆ½È…¹äÍÑ…™˜¹…µ”¥¸Ñ¡”É•Á±ä¸MÁ•…¬…ÌÑ¡”‰É…¹è€‰İ”ˆ°€‰ÕÌˆ°€‰½ÕÈÑ•…´ˆ°€‰$ˆ¸¹äµ•¹Ñ¥½¸½˜•éµ½¹¥¸Ñ¡•Í”¥¹ÍÑÉÕÑ¥½¹Ì¥Ì…‰½ÕĞÑ¡”¥¹Ñ•É¹…°™±…œ°¹•Ù•ÈÍ½µ•Ñ¡¥¹œÑ¼Ñ•±°Ñ¡”ÕÍÑ½µ•È¸(´]…É´°‰É¥•˜°€È´ÔÍ•¹Ñ•¹•Ì¸]É¥Ñ”…Ì„É•…°Á•ÉÍ½¸…ĞÑ¡”‰É…¹°¹½Ğ„‰½Ğ¸()I•ÍÁ½¹İ¥Ñ =91dÉ…Ü)M=8°¹¼µ…É­‘½İ¸™•¹•Ìè)ì(€€‰ÑåÁ”ˆè€‰½É‘•É}¥¹ÅÕ¥Éäˆğ€‰ÁÉ½‘ÕÑ}ÅÕ•ÍÑ¥½¸ˆğ€‰•¹•É…±}ÍÕÁÁ½ÉĞˆ°(€€‰ÍÕµµ…Éäˆè€‰½¹”½ÈÑİ¼Í¡½ÉĞ±¥¹•Ìèİ¡…ĞÑ¡”İ¡½±”½¹Ù•ÉÍ…Ñ¥½¸¥Ì…‰½ÕĞÍ¼™…È…¹İ¡…ĞÑ¡”ÕÍÑ½µ•È¹••‘Ì™É½´ÕÌ¹½Üˆ°(€€‰É•ÍÁ½¹Í”ˆè€‰Ñ¡”É•Á±äÑ¼Í•¹ˆ°(€€‰•áÑÉ…Ñ•‘=É‘•É9Õµ‰•Èˆè€‰½É‘•È¹Õµ‰•È¥˜µ•¹Ñ¥½¹•¥¸Ñ¡”‰½‘ä=HÑ¡”ÍÕ‰©•Ğ±¥¹”°•±Í”¹Õ±°ˆ°(€€‰ÁÉ½‘ÕÑ-•åİ½É‘Ìˆèl‰ÁÉ½‘ÕĞ¹…µ•Ì½ÈÑåÁ•Ìµ•¹Ñ¥½¹•°•±Í”•µÁÑä…ÉÉ…ä‰t°(€€‰¹••‘Í!Õµ…¸ˆèÑÉÕ”½È™…±Í”°(€€‰™±…I•…Í½¸ˆè€‰¥˜¹••‘Í!Õµ…¸¥ÌÑÉÕ”°„™•Üİ½É‘Ì½¸İ¡…Ğ•éµ½¹¹••‘ÌÑ¼‘¼ì•±Í”¹Õ±°ˆ°(€€‰…Õ‘¥•¹”ˆè€‰ÕÍÑ½µ•Èˆğ€‰½Ñ¡•Èˆ°(€€‰¹•İ‘‘É•ÍÌˆè¹Õ±°½Èì‰…‘‘É•ÍÌÄˆè€‰ÍÑÉ••Ğ…¹¹Õµ‰•Èˆ°€‰…‘‘É•ÍÌÈˆè€‰…ÁĞ½Õ¹¥Ğ½È•µÁÑäˆ°€‰¥Ñäˆè€ˆˆ°€‰ÍÑ…Ñ”ˆè€‰Ñİ¼µ±•ÑÑ•È½‘”¥˜UL°•±Í”Ñ¡”É•¥½¸¹…µ”ˆ°€‰é¥Àˆè€ˆˆ°€‰½Õ¹ÑÉäˆè€‰Ñİ¼µ±•ÑÑ•È½‘”°UL¥˜¹½ĞÍÑ…Ñ•‰ô)ô()¹•İ‘‘É•ÍÌ¥Ì=91d™½È„ÕÍÑ½µ•È…Í­¥¹œÑ¼¡…¹”°½ÉÉ•Ğ½È…‘Ñ¼Ñ¡”Í¡¥ÁÁ¥¹œ…‘‘É•ÍÌ½¸…¸½É‘•È€¡¹•ÜÍÑÉ••Ğ°…Á…ÉÑµ•¹Ğ¹Õµ‰•È°¥Ñä°é¥À¤¸½Áä•á…Ñ±äİ¡…ĞÑ¡•äİÉ½Ñ”¥¹Ñ¼Ñ¡”™¥•±‘Ì€´™¥à¹½Ñ¡¥¹œ°Õ•ÍÌ¹½Ñ¡¥¹œì±•…Ù”„™¥•±•µÁÑä¥˜Ñ¡•ä‘¥¹½Ğ¥Ù”¥Ğ¸½È…¹åÑ¡¥¹œ•±Í”¥Ğ¥Ì¹Õ±°¸()…Õ‘¥•¹”¥Ì€‰ÕÍÑ½µ•Èˆ™½È…¹å½¹”İ¡¼¡…Ì‰½Õ¡Ğ°¥Ì…Í­¥¹œ…‰½ÕĞ…¸½É‘•È°½È¥Ì…Í­¥¹œ…‰½ÕĞ‰Õå¥¹œ€´•Ù•¸¥˜Ñ¡•ä…É”…¹Éä½ÈÙ…Õ”¸…Õ‘¥•¹”¥Ì€‰½Ñ¡•Èˆ™½È•Ù•ÉåÑ¡¥¹œÑ¡…Ğ¥Ì¹½Ğ„ÕÍÑ½µ•ÈèÙ•¹‘½ÉÌ°…•¹¥•Ì…¹™É••±…¹•ÉÌÁ¥Ñ¡¥¹œÍ•ÉÙ¥•Ì€¡µ…É­•Ñ¥¹œ°M<°…‘Ì°Á…­…¥¹œ°µ…¹Õ™…ÑÕÉ¥¹œ°Í½™Ñİ…É”°İ•ˆ‘•Í¥¸¤°¥¹™±Õ•¹•È€¼É•…Ñ½È€¼½±±…ˆ€¼Á…ÉÑ¹•ÉÍ¡¥ÀÉ•ÅÕ•ÍÑÌ°©½ˆÍ••­•ÉÌ°İ¡½±•Í…±”…¹É•Í•±±•ÈÁ¥Ñ¡•Ì™É½´‰ÕÍ¥¹•ÍÍ•Ì°¹•İÍ±•ÑÑ•ÉÌ…¹µ…É­•Ñ¥¹œ‰±…ÍÑÌ°½±½ÕÑÉ•… °ÍÁ…´°…¹…ÕÑ½µ…Ñ•¹½Ñ¥™¥…Ñ¥½¹Ì¸%˜Í½µ•½¹”Á¥Ñ¡•Ì„Í•ÉÙ¥”9…Í­Ì…‰½ÕĞ‰Õå¥¹œ°Ñ¡•ä…É”€‰ÕÍÑ½µ•Èˆ¸()M•Ğ¹••‘Í!Õµ…¸Ñ¼ÑÉÕ”İ¡•¹•Ù•ÈÑ¡”MQ=IA=1%%LÍ…äÑ¼™±…œÑ¡”•µ…¥°™½È•éµ½¹°İ¡•¹•Ù•Èå½ÕÈÉ•Á±äÍ…åÌå½Ôİ¥±°¡•¬½¸Í½µ•Ñ¡¥¹œ…¹½µ”‰…¬°İ¡•¹•Ù•ÈÑ¡”ÕÍÑ½µ•È¥Ì…Í­¥¹œ™½È„¡…¹”å½Ô…¹¹½Ğµ…­”€¡…‘‘É•ÍÌ°…¹•±±…Ñ¥½¸°É•™Õ¹°Íİ…À°•áÁ•‘¥Ñ”¤°…¹İ¡•¹•Ù•ÈÑ¡”•µ…¥°¥Ì„Ñ¡É•…Ğ°„±•…°¹½Ñ¥”°„Á…ÉÑ¹•ÉÍ¡¥À½ÈÙ•¹‘½ÈÁ¥Ñ °½ÈÍ½µ•Ñ¡¥¹œÑ¡”Á½±¥¥•Ì‘¼¹½Ğ½Ù•È¸]¡•¸Ñ¡”É•Á±ä¥Ì½µÁ±•Ñ”…¹¹••‘Ì¹½Ñ¡¥¹œ™É½´•éµ½¹°Í•Ğ¥ĞÑ¼™…±Í”¹€ì((€½¹ÍĞµ•ÍÍ…”€ô…İ…¥Ğ…¹Ñ¡É½Á¥Œ¹µ•ÍÍ…•Ì¹É•…Ñ”¡ì(€€€µ½‘•°è€±…Õ‘”µÍ½¹¹•Ğ´Ğ´Ôœ°(€€€µ…á}Ñ½­•¹Ìè€ÄÈÀÀ°(€€€µ•ÍÍ…•ÌèmìÉ½±”è€ÕÍ•Èœ°½¹Ñ•¹ĞèÁÉ½µÁĞõt°(€ô¤ì((€±•ĞÑ•áĞ€ôµ•ÍÍ…”¹½¹Ñ•¹ÑlÁt¹Ñ•áĞ¹ÑÉ¥´ ¤ì(€Ñ•áĞ€ôÑ•áĞ¹É•Á±…” ½y€ üé©Í½¸¤ıqÌ¨½¤°€œœ¤¹É•Á±…” ½€¼°€œœ¤¹ÑÉ¥´ ¤ì((€ÑÉäì(€€€½¹ÍĞ½É‘•ÉQ•áĞ€ô€‘íÕÍÑ½µ•É	±½¬ñğ€œô‘í½É‘•É	±½­õ€ì(€€€½¹ÍĞÕ¹Í¡¥ÁÁ•€ô€…½É‘•ÉQ•áĞ¹ÑÉ¥´ ¤ñğ€½¹½ĞÍ¡¥ÁÁ•‘ñÕ¹™Õ±™¥±±•‘ñÁ…ÉÑ¥…±±ä½¤¹Ñ•ÍĞ¡½É‘•ÉQ•áĞ¤ì(€€€É•ÑÕÉ¸Á½±¥Í¡I•Á±ä¡)M=8¹Á…ÉÍ”¡Ñ•áĞ¤°ìÕ¹Í¡¥ÁÁ•ô¤ì(€ô…Ñ €¡”¤ì(€€€É•ÑÕÉ¸ì(€€€€€ÑåÁ”è€•¹•É…±}ÍÕÁÁ½ÉĞœ°(€€€€€ÍÕµµ…Éäè€½Õ±¹½ĞÁ…ÉÍ”$É•ÍÁ½¹Í”œ°(€€€€€É•Á½¹Í”èÑ•áĞ°(€€€€€•áÑÉ…Ñ•‘=É‘•É9Õµ‰•Èè¹Õ±°°(€€€€€ÁÉ½‘ÕÑ-•åİ½É‘Ìèmt°(      needsHuman: true,
+${extra.attachments && extra.attachments.length ? `(They attached ${extra.attachments.length} file${extra.attachments.length === 1 ? '' : 's'}: ${extra.attachments.map((a) => a.filename).join(', ')}. You cannot see the files. If they are photos of a problem, thank them for the photos and say the team is looking at them - never describe what the photos show, and if the policies ask for photos, do not ask for them again.)` : ''}
+${extra.history ? `
+EARLIER MESSAGES IN THIS THREAD (quoted history, oldest at the bottom). Context only. These were already dealt with - do NOT answer them again and do NOT confirm or repeat things from them. Use them only to understand what the new message refers to (which order, which address, what was already promised):
+<<<
+${extra.history}
+>>>
+` : ''}
+STORE POLICIES AND CURRENT NOTICES:
+${faqContext}
+${customerBlock || ''}${orderBlock}${productBlock}
+
+RULES:
+- ANSWER, DO NOT DEFER. If a CUSTOMER ORDER block or CUSTOMER RECORD is shown above, it already tells you whether each item has shipped, its tracking, how long ago the order was placed and whether it is past its window. Put those facts in the reply as the answer. A reply whose substance is "let me check / we'll get back to you / I'm looking into it" while the order data is sitting above is WRONG. The only thing you may say you are checking is the exact day an unshipped piece will go out - and only AFTER stating everything the data does say.
+- When the customer asks "where is my order", "any update", "still coming?", "when will it ship": the reply must name the order number, say for each item whether it has shipped (with the tracking number) or is still being made, and follow the "WHAT TO SAY ABOUT THIS ORDER" line if there is one.
+- Most items are handmade to order. Never promise a delivery date faster than the stated production time.
+- WHICH SOURCE TO BELIEVE, in this order, highest first:
+  1. CURRENT NOTICES in the policies - these are written today and beat everything else.
+  2. The rest of the STORE POLICIES above - these are kept up to date by hand.
+  3. A product page description - use it only for details the policies do not cover, such as dimensions, materials or installation.
+  If the policies and a product page disagree on a production time, the policies are right and the product page is out of date. Never quote a product page timeline that contradicts the policies.
+- Never guess an item's timeline from a similar-sounding product. If neither the policies nor its product page covers it, do not state a timeline at all.
+- An order ships no sooner than its SLOWEST item unless the policies say items ship as they are ready. Identify the slowest item and lead with its timeline; never imply the order is nearly ready because the quick items are.
+- Never state where a specific parcel or item currently is unless live order data is shown above. Without it, describe what usually happens and ask for the order number.
+- If a notice above mentions a delay or a temporary change, reflect it in your answer.
+- Use the customer record above to work out which order they mean, even if they never gave an order number. Refer to orders by number so there is no confusion.
+- If they have more than one order, address each one they are asking about separately and say plainly which has shipped and which has not.
+- Never say an order has shipped unless its fulfillment status says so, and never invent tracking numbers, dates, prices or stock levels.
+- If they are asking you to CHANGE something - a shipping address, a cancellation, a refund, swapping an item - you cannot do it. Say a human will take care of it and confirm shortly. Never imply the change has been made. If an order they want changed has already shipped, say so honestly.
+- If they are a repeat customer, a brief word of thanks is welcome, but do not overdo it.
+- Never write the name "Dezmond" or any staff name in the reply. Speak as the brand: "we", "us", "our team", "I". Any mention of Dezmond in these instructions is about the internal flag, never something to tell the customer.
+- Warm, brief, 2-5 sentences. Write as a real person at the brand, not a bot.
+
+Respond with ONLY raw JSON, no markdown fences:
+{
+  "type": "order_inquiry" | "product_question" | "general_support",
+  "summary": "one or two short lines: what the whole conversation is about so far and what the customer needs from us now",
+  "response": "the reply to send",
+  "extractedOrderNumber": "order number if mentioned in the body OR the subject line, else null",
+  "productKeywords": ["product names or types mentioned, else empty array"],
+  "needsHuman": true or false,
+  "flagReason": "if needsHuman is true, a few words on what Dezmond needs to do; else null",
+  "audience": "customer" | "other",
+  "newAddress": null or {"address1": "street and number", "address2": "apt/unit or empty", "city": "", "state": "two-letter code if US, else the region name", "zip": "", "country": "two-letter code, US if not stated"}
+}
+
+newAddress is ONLY for a customer asking to change, correct or add to the shipping address on an order (new street, apartment number, city, zip). Copy exactly what they wrote into the fields - fix nothing, guess nothing; leave a field empty if they did not give it. For anything else it is null.
+
+audience is "customer" for anyone who has bought, is asking about an order, or is asking about buying - even if they are angry or vague. audience is "other" for everything that is not a customer: vendors, agencies and freelancers pitching services (marketing, SEO, ads, packaging, manufacturing, software, web design), influencer / creator / collab / partnership requests, job seekers, wholesale and reseller pitches from businesses, newsletters and marketing blasts, cold outreach, spam, and automated notifications. If someone pitches a service AND asks about buying, they are "customer".
+
+Set needsHuman to true whenever the STORE POLICIES say to flag the email for Dezmond, whenever your reply says you will check on something and come back, whenever the customer is asking for a change you cannot make (address, cancellation, refund, swap, expedite), and whenever the email is a threat, a legal notice, a partnership or vendor pitch, or something the policies do not cover. When the reply is complete and needs nothing from Dezmond, set it to false.`;
+
+  const message = await anthropic.messages.create({
+    model: 'claude-sonnet-4-5',
+    max_tokens: 1200,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  let text = message.content[0].text.trim();
+  text = text.replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim();
+
+  try {
+    const orderText = `${customerBlock || ''}${orderBlock}`;
+    const unshipped = !orderText.trim() || /not shipped|unfulfilled|partially/i.test(orderText);
+    return polishReply(JSON.parse(text), { unshipped });
+  } catch (e) {
+    return {
+      type: 'general_support',
+      summary: 'Could not parse AI response',
+      response: text,
+      extractedOrderNumber: null,
+      productKeywords: [],
+      needsHuman: true,
       flagReason: 'AI reply could not be parsed - read before sending',
     };
   }
@@ -1211,7 +1281,7 @@ function polishReply(parsed, ctx) {
     const signoff = /\n*\s*[-â€“â€”]?\s*(the\s+)?crib essentials(\s+team)?\s*[.!]?\s*$/i;
     let before = null;
     while (before !== reply) { before = reply; reply = reply.replace(signoff, '').trim(); }
-    reply = `${reply}\n\n- Crib Essentialr`;
+    reply = `${reply}\n\n- Crib Essentials`;
   }
   parsed.response = reply;
 
@@ -1265,7 +1335,7 @@ ${context ? `VERSIONS:
 1. "detailed": a little longer and more thorough - explain the why behind each point in a friendly way, still human and warm, 4-7 sentences. No new facts, just fuller sentences.
 2. "formal": polished and professional, apologetic where the approved reply apologizes, no slang, no exclamation marks, 3-6 sentences.`}
 
-CUSTOMER'S EMAIL${context ? '' : ' (for context only - do not answer anything the approved reply does not answer)"}:
+CUSTOMER'S EMAIL${context ? '' : ' (for context only - do not answer anything the approved reply does not answer)'}:
 """
 ${customerEmail}
 """
@@ -1386,8 +1456,9 @@ async function processEmail(input) {
       let savedOther = null;
       if (replace && threadId && dbReady && Lead) {
         try {
-          const existing = await Lead.findOne({ threadId, status Ã§: { $ne: 'sent' } }).sort({ createdAt: -1 });
-          if (existing) {            delete otherDoc.createdAt;
+          const existing = await Lead.findOne({ threadId, status: { $ne: 'sent' } }).sort({ createdAt: -1 });
+          if (existing) {
+            delete otherDoc.createdAt;
             if (existing.audienceSetBy === 'dashboard' && existing.audience) otherDoc.audience = existing.audience;
             await Lead.findByIdAndUpdate(existing._id, otherDoc);
             savedOther = await Lead.findById(existing._id).lean();
@@ -1416,7 +1487,7 @@ async function processEmail(input) {
       /\b(my order|the order|order status|any update|update on|where is|still (coming|waiting)|hasn'?t (arrived|shipped|come)|not (arrived|received|shipped)|never (came|arrived)|when will|how long|tracking|shipped|delivered|refund|cancel|address|missing|damaged|broken|wrong (item|size|color|colour)|waiting)\b/i.test(`${subject || ''}\n${body}`);
     if (!shopifyData && !initial.extractedOrderNumber && customer && aboutTheirOrder) {
       assumedOrder = likelyOrderName(customer);
-      if (assumedOrd) {
+      if (assumedOrder) {
         shopifyData = await getShopifyOrder(assumedOrder);
         if (shopifyData) shopifyData.assumed = true;
       }
