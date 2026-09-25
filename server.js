@@ -592,7 +592,7 @@ const CUSTOMER_QUERY = `
                 tags
                 note
                 totalPriceSet { shopMoney { amount } }
-                lineItems(first: 10) { edges { node { title variantTitle quantity unfulfilledQuantity product { id } } } }
+                lineItems(first: 10) { edges { node { title variantTitle quantity unfulfilledQuantity product { id } discountedTotalSet { shopMoney { amount } } variant { inventoryItem { unitCost { amount } } } } } }
                 fulfillments(first: 5) {
                   displayStatus
                   createdAt
@@ -662,6 +662,11 @@ async function getCustomerContext(email) {
             quantity: le.node.quantity,
             unfulfilled: typeof le.node.unfulfilledQuantity === 'number' ? le.node.unfulfilledQuantity : null,
             productId: le.node.product ? le.node.product.id : null,
+            // Dashboard only - what the customer paid for the line and what it
+            // costs us (Shopify's "cost per item"). Never shown to the bot.
+            paid: le.node.discountedTotalSet && le.node.discountedTotalSet.shopMoney ? Number(le.node.discountedTotalSet.shopMoney.amount) : null,
+            unitCost: le.node.variant && le.node.variant.inventoryItem && le.node.variant.inventoryItem.unitCost
+              ? Number(le.node.variant.inventoryItem.unitCost.amount) : null,
           })),
           tracking: tracking,
           // One entry per shipment: what went out, when, and its tracking.
@@ -2591,7 +2596,7 @@ app.get('/api/health', async (req, res) => {
   const want = ['read_all_orders', 'write_orders', 'write_customers', 'write_fulfillments', 'read_returns', 'write_returns'];
   res.json({
     status: 'ok',
-    version: 'v15.2 - drafts rewrite themselves when an order ships (Shopify webhook); Redraft runs on the server in ~20s',
+    version: 'v15.3 - cost of goods and margin on every order in the customer panel',
     shopifyScopes: sc.scopes,
     shopifyScopesMissing: sc.scopes ? want.filter((w) => !sc.scopes.includes(w)) : null,
     shopifyScopeError: sc.error,
