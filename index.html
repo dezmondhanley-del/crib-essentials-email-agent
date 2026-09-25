@@ -294,7 +294,13 @@
   .ip{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:600;margin-left:6px;vertical-align:middle;white-space:nowrap}
   .ip.no{background:var(--accent-soft);color:var(--accent-ink)}
   .ip.yes{background:var(--good-soft);color:var(--good)}
-  .ip.part{background:var(--warn-soft);color:var(--warn)}
+  .cg{font-size:11px;color:var(--faint);margin-left:6px}
+.cg.none{opacity:.7;font-style:italic}
+.cogs{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:12px;color:var(--faint);margin:4px 0 2px;padding-top:6px;border-top:1px dashed var(--line)}
+.cogs .good{color:var(--sage,#7fa88a)}
+.cogs .bad{color:var(--amber,#d9a441)}
+.cogs .none{font-style:italic;opacity:.8}
+.ip.part{background:var(--warn-soft);color:var(--warn)}
   .ship{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-top:8px;font-size:13px}
   .ship .sh{font-weight:600;display:flex;justify-content:space-between;gap:8px}
   .ship .si{color:var(--muted);margin-top:2px}
@@ -1251,7 +1257,9 @@ function renderCustomer(){
         '<div class="st">' + esc(pretty(o.financial)) + '<span class="sep">•</span>' + esc(pretty(o.fulfillment)) + '</div>' +
         '<div class="mt">' + esc(o.createdAt ? new Date(o.createdAt).toLocaleString([], {month:'long', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit'}) : '') + '</div>' +
         '<div class="it">' + (o.items || []).map(function(i){
-          return '<div><span>' + esc(i.title) + (i.variant ? ' · ' + esc(i.variant) : '') + itemPill(i) + '</span><span>× ' + esc(i.quantity) + '</span></div>'; }).join('') + '</div>';
+          var cost = (i.unitCost != null) ? ' <span class="cg">cost $' + esc(money(i.unitCost * (i.quantity || 1))) + '</span>' : ' <span class="cg none">no cost set</span>';
+          return '<div><span>' + esc(i.title) + (i.variant ? ' · ' + esc(i.variant) : '') + itemPill(i) + '</span><span>× ' + esc(i.quantity) + cost + '</span></div>'; }).join('') + '</div>' +
+        cogsLine(o);
       // Expanded: what has shipped, what has not, and a link into Shopify.
       html += '<div class="detail">';
       var ships = o.shipments || [];
@@ -1369,6 +1377,22 @@ async function saveAddress(gid, oname, c, btn){
 }
 
 var openOrders = {};
+// Cost of goods for one order, from Shopify's "cost per item". Revenue is
+// what the customer actually paid per line (after discounts); margin is what
+// is left before shipping and fees. Only shown here - the bot never sees it.
+function cogsLine(o){
+  var items = o.items || [];
+  var costed = items.filter(function(i){ return i.unitCost != null; });
+  if(!costed.length) return '';
+  var cogs = items.reduce(function(n, i){ return n + (i.unitCost != null ? i.unitCost * (i.quantity || 1) : 0); }, 0);
+  var rev = items.reduce(function(n, i){ return n + (i.paid != null ? i.paid : 0); }, 0);
+  if(!rev && o.total) rev = Number(o.total) || 0;
+  var margin = rev - cogs, pct = rev > 0 ? Math.round(margin / rev * 100) : null;
+  var missing = items.length - costed.length;
+  return '<div class="cogs"><span>Cost $' + esc(money(cogs)) + '</span><span>Paid $' + esc(money(rev)) + '</span>' +
+    '<span class="' + (margin < 0 ? 'bad' : 'good') + '">Margin $' + esc(money(margin)) + (pct != null ? ' (' + pct + '%)' : '') + '</span>' +
+    (missing ? '<span class="none">' + missing + ' item' + (missing === 1 ? '' : 's') + ' without a cost</span>' : '') + '</div>';
+}
 // Per-line-item fulfillment pill, from Shopify's unfulfilledQuantity.
 function itemPill(i){
   if(i.unfulfilled == null) return '';
