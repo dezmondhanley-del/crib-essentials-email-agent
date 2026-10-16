@@ -73,6 +73,7 @@
     .chead .movebtn .short{display:inline}
     .chead .who{flex:1 1 90px}
     .chead .custbtn{margin-left:0;flex:none}
+    .chead .stage{font-size:11px;padding:4px 22px 4px 8px}
     .chead .av{flex:none}
     .chead .nm{font-size:14px}
   }
@@ -110,6 +111,8 @@
   .chip.other{background:var(--plum-soft);color:var(--plum)}
   .movebtn{padding:5px 11px;border:1px solid var(--line);border-radius:14px;background:transparent;font:inherit;font-size:12px;color:var(--muted);cursor:pointer;white-space:nowrap}
   .movebtn:hover{border-color:var(--ink);color:var(--ink)}
+  .stage{padding:5px 26px 5px 10px;border:1px solid var(--line);border-radius:14px;background:var(--soft) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23999' stroke-width='1.4'/%3E%3C/svg%3E") no-repeat right 9px center/10px;color:var(--ink);font:inherit;font-size:12px;cursor:pointer;-webkit-appearance:none;appearance:none;white-space:nowrap}
+  span.stage{cursor:default;color:var(--muted);background:transparent;padding-right:10px}
   .movebtn .short{display:none}
   .chip.draft{background:var(--sky-soft);color:var(--sky)}
   .chip.sent{background:var(--good-soft);color:var(--good)}
@@ -367,7 +370,7 @@
       <button class="tab on" data-f="all">All <span class="n" id="n-all">0</span></button>
       <button class="tab" data-f="needs">Needs you <span class="n" id="n-needs">0</span></button>
       <button class="tab" data-f="open">Open <span class="n" id="n-open">0</span></button>
-      <button class="tab" data-f="sent">Replied <span class="n" id="n-sent">0</span></button>
+      <button class="tab" data-f="sent" title="Replied, or marked done">Done <span class="n" id="n-sent">0</span></button>
       <button class="tab" data-f="other" title="Vendors, collabs, newsletters - anyone who is not a customer">Other <span class="n" id="n-other">0</span></button>
       <button class="tab" data-f="rem" title="Things to do after replying - ship it, refund it, check on it">Reminders <span class="n" id="n-rem">0</span></button>
     </div>
@@ -418,11 +421,13 @@ function initials(name, email){
   if(n && n !== 'Unknown'){ var p = n.split(/\s+/); return (p[0][0] + (p[1] ? p[1][0] : '')).toUpperCase(); }
   return String(email || '?')[0].toUpperCase();
 }
-function needsMe(l){ return !!l.needsHuman && l.status !== 'sent'; }
+function needsMe(l){ return !!l.needsHuman && l.status !== 'sent' && l.status !== 'closed'; }
+function isDone(l){ return l.status === 'closed'; }
 function avClass(key){ var h = 0, k = String(key || ''); for(var i = 0; i < k.length; i++){ h = (h * 31 + k.charCodeAt(i)) >>> 0; } return 'av c' + (h % 8); }
 function statusChip(c){
   if(c.other) return '<span class="chip other">Not a customer</span>';
   if(c.needs) return '<span class="chip needs">Needs you</span>';
+  if(c.done) return '<span class="chip sent">Done</span>';
   if(c.open) return '<span class="chip draft">Draft ready</span>';
   return '<span class="chip sent">Replied</span>';
 }
@@ -507,7 +512,8 @@ function group(){
     c.other = c.latest.audience === 'other';
     // Non-customers never count as "needs you" - they live in their own tab.
     c.needs = !c.other && c.items.some(needsMe);
-    c.open = c.latest.status !== 'sent';
+    c.done = isDone(c.latest);
+    c.open = c.latest.status !== 'sent' && !c.done;
     return c;
   });
 }
@@ -554,7 +560,7 @@ function render(){
       : q ? 'Nothing matches "' + esc(query.trim()) + '".'
       : filter === 'needs' ? 'Nothing needs you right now.'
       : filter === 'open' ? 'Everything has been answered.'
-      : filter === 'sent' ? 'No replies sent yet. Send one and it shows up here.'
+      : filter === 'sent' ? 'Nothing finished yet. Replies you send, and conversations you mark done, show up here.'
       : filter === 'other' ? 'No vendor pitches, collabs or spam. Anything the bot decides is not a customer lands here.'
       : 'Nothing here.';
     rows.innerHTML = '<div class="empty">' + why + '</div>';
@@ -892,6 +898,7 @@ function renderConvo(){
     '<div class="who"><div class="nm">' + esc(c.name) + '</div><div class="em">' + esc(c.email) + (latest.subject ? ' · ' + esc(latest.subject) : '') + '</div></div>' +
     '<span class="badge">' + esc(c.other ? 'Not a customer' : kind) + '</span>' +
     '<button class="movebtn" id="moveBtn" title="' + (c.other ? 'Put this back with the customers' : 'Move this out of the customer list') + '"><span class="full">' + (c.other ? 'Move to customers' : 'Not a customer') + '</span><span class="short">' + (c.other ? 'To customers' : 'Not customer') + '</span></button>' +
+    (c.other ? '' : stageSelect(c)) +
     '<button class="custbtn" id="custBtn">Customer</button></div>';
 
   if(latest.aiAnalysis) html += '<div class="summary' + (sumOpen[c.key] ? ' open' : '') + '" id="sumBox"><b>Summary</b><span>' + esc(latest.aiAnalysis) + '</span></div>';
@@ -928,7 +935,9 @@ function renderConvo(){
   html += addressBlock(c);
   html += remindBlock(c);
   var following = latest.status === 'sent' && !!followOpen[c.key];
-  if(latest.status === 'sent' && !following){
+  if(c.done){
+    html += '<div class="notice sent">Marked done - no reply needed' + (latest.closedAt ? ' (' + esc(new Date(latest.closedAt).toLocaleDateString()) + ')' : '') + '. A new email from them reopens it. <button class="linkbtn" id="reopenBtn">Reopen</button></div>';
+  } else if(latest.status === 'sent' && !following){
     html += '<div class="notice sent">Replied ' + esc(new Date(latest.sentAt).toLocaleString()) + '. A new email from them will reopen this conversation.' +
       (latest.threadId ? ' <button class="linkbtn" id="followBtn">Send another message</button>' : '') + '</div>';
   } else if(following){
@@ -971,6 +980,10 @@ function renderConvo(){
   html += '</div>';
   el.innerHTML = html;
   boxBaseline = (latest.status === 'sent') ? [''] : drafts.map(function(d){ return d.text; }).concat(['']);
+  var sel = document.getElementById('stageSel');
+  if(sel) sel.onchange = function(){ setStage(c, sel.value, sel); };
+  var rb = document.getElementById('reopenBtn');
+  if(rb) rb.onclick = function(){ setStage(c, 'open', rb); };
   var fb = document.getElementById('followBtn');
   if(fb) fb.onclick = function(){ followOpen[c.key] = true; render(); setTimeout(function(){ var b = document.getElementById('composeBox'); if(b) b.focus(); }, 50); };
   var fc = document.getElementById('followCancel');
@@ -1494,6 +1507,39 @@ function askToken(message){
 
 // Flip a conversation between the customer list and "Other". Every email in
 // the thread moves together so it does not reappear under a different tab.
+// Stage dropdown in the conversation header.
+function stageSelect(c){
+  var l = c.latest;
+  if(l.status === 'sent') return '<span class="stage replied" title="You replied to this one">Replied</span>';
+  var cur = c.done ? 'done' : (c.needs ? 'needs' : 'open');
+  return '<select class="stage" id="stageSel" title="Change the stage of this conversation">' +
+    '<option value="needs"' + (cur === 'needs' ? ' selected' : '') + '>Needs you</option>' +
+    '<option value="open"' + (cur === 'open' ? ' selected' : '') + '>Open - draft ready</option>' +
+    '<option value="done"' + (cur === 'done' ? ' selected' : '') + '>Done - no reply needed</option></select>';
+}
+async function setStage(c, stage, el){
+  var token = getToken();
+  if(!token){ askToken('Enter your dashboard token to change the stage.'); return; }
+  if(el) el.disabled = true;
+  try{
+    for(var i = 0; i < c.items.length; i++){
+      if(c.items[i].status === 'sent') continue;
+      var r = await fetch(API_URL + '/api/leads/' + encodeURIComponent(c.items[i]._id) + '/stage', {
+        method:'POST', headers:{ 'Content-Type':'application/json', 'x-dashboard-token': token },
+        body: JSON.stringify({ stage: stage })
+      });
+      if(!r.ok){ var d = await r.json().catch(function(){ return {}; }); throw new Error(d.error || ('Server returned ' + r.status)); }
+      var l = c.items[i];
+      l.status = stage === 'done' ? 'closed' : 'drafted';
+      l.needsHuman = stage === 'needs';
+      if(stage === 'done') l.closedAt = new Date().toISOString();
+    }
+    group(); render();
+  }catch(err){
+    window.alert('Could not change the stage: ' + err.message);
+    if(el) el.disabled = false;
+  }
+}
 async function setAudience(c, audience, btn){
   var token = getToken();
   if(!token){ askToken('Enter your dashboard token to move conversations.'); return; }
