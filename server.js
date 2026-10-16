@@ -81,6 +81,9 @@ const leadSchema = new mongoose.Schema(
     attachments: [Object],
     sentAt: Date,
     sentBody: String,
+    // Set by hand from the Inbox (stage dropdown).
+    closedAt: Date,
+    stageSetBy: String,
     // Extra messages sent after the reply ("your label is printed", etc.).
     followUps: [Object],
     // Photos Dezmond attached to his reply (stored like incoming ones, under messageId "out-<leadId>").
@@ -1907,6 +1910,33 @@ app.post('/api/leads/:id/audience', async (req, res) => {
   }
 });
 
+// Stage set by hand from the Inbox: "needs" (needs Dezmond), "open" (draft
+// ready, nothing needed from him), "done" (no reply needed - closes it). A
+// new email from the customer reopens a done conversation on its own.
+app.post('/api/leads/:id/stage', async (req, res) => {
+  if (!checkToken(req, res)) return;
+  const stage = String((req.body && req.body.stage) || '');
+  const patch = stage === 'needs' ? { status: 'drafted', needsHuman: true, stageSetBy: 'dashboard' }
+    : stage === 'open' ? { status: 'drafted', needsHuman: false, stageSetBy: 'dashboard' }
+    : stage === 'done' ? { status: 'closed', needsHuman: false, closedAt: new Date(), stageSetBy: 'dashboard' }
+    : null;
+  if (!patch) return res.status(400).json({ error: 'stage must be needs, open or done' });
+  try {
+    const lead = await findLead(req.params.id);
+    if (!lead) return res.status(404).json({ error: 'Not found' });
+    if (lead.status === 'sent') return res.status(400).json({ error: 'Already replied - that stage cannot change.' });
+    if (dbReady && Lead) {
+      await Lead.findByIdAndUpdate(req.params.id, patch);
+    } else {
+      const m = memoryLeads.find((l) => l._id === req.params.id);
+      if (m) Object.assign(m, patch);
+    }
+    res.json({ ok: true, stage });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ---- Reminders ----
 function cleanReminder(body) {
   const text = String((body && body.text) || '').trim().slice(0, 300);
@@ -2602,7 +2632,7 @@ app.get('/api/health', async (req, res) => {
   const want = ['read_all_orders', 'write_orders', 'write_customers', 'write_fulfillments', 'read_returns', 'write_returns'];
   res.json({
     status: 'ok',
-    version: 'v15.4 - follow-up messages on answered conversations; cost of goods on orders',
+    version: 'v15.5 - stage dropdown (Needs you / Open / Done - no reply needed)',
     shopifyScopes: sc.scopes,
     shopifyScopesMissing: sc.scopes ? want.filter((w) => !sc.scopes.includes(w)) : null,
     shopifyScopeError: sc.error,
